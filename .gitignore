@@ -1,0 +1,9 @@
+/target
+debug/
+*.swp
+*.swo
+.DS_Store
+*.env
+*.key
+*.pem
+credentials.json
