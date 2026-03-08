@@ -9,14 +9,14 @@
 <p align="center">
   <a href="https://discord.gg/3ux2c5xz"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/tests-905-green.svg" alt="905 tests">
+  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/tests-1012-green.svg" alt="1012 tests">
   <img src="https://img.shields.io/badge/providers-6-red.svg" alt="6 providers">
 </p>
 
 # SkyClaw
 
-Cloud-native Rust AI agent runtime. 38K lines, 905 tests, zero warnings.
+Cloud-native Rust AI agent runtime. 40K lines, 1012 tests, zero warnings.
 
 ## What It Does
 
@@ -28,11 +28,11 @@ No web dashboards. No config files to edit. Deploy, paste your API key in Telegr
 
 | Metric | Value |
 |--------|-------|
-| **Lines of Rust** | 38,126 across 96 source files |
-| **Tests** | 905 passing, 0 failures |
+| **Lines of Rust** | 40,106 across 96 source files |
+| **Tests** | 1,012 passing, 0 failures |
 | **Clippy warnings** | 0 (CI gate: `-D warnings`) |
 | **Workspace crates** | 13 + 1 binary |
-| **Implemented features** | 35 across 7 phases |
+| **Implemented features** | 40 across 7 phases |
 | **AGENTIC CORE modules** | 20 |
 | **Traits (core)** | 13 shared trait definitions |
 | **AI providers** | 6 (Anthropic, OpenAI, Gemini, Grok, OpenRouter, MiniMax) |
@@ -42,7 +42,7 @@ No web dashboards. No config files to edit. Deploy, paste your API key in Telegr
 | **Memory backends** | 3 (SQLite, Markdown, failover) |
 | **File storage** | 2 (local, S3/R2) |
 | **Observability** | OpenTelemetry, 6 predefined metrics |
-| **Security features** | Auto-whitelist, vault encryption, path traversal protection, force-push block |
+| **Security features** | Auto-whitelist, vault encryption, path traversal protection, force-push block, credential message deletion |
 | **Vision support** | JPEG, PNG, GIF, WebP (Anthropic + OpenAI formats) |
 | **Release profile** | `opt-level=z`, LTO, 1 codegen unit, stripped, `panic=abort` |
 | **Minimum Rust version** | 1.82 (Edition 2021) |
@@ -101,7 +101,7 @@ Paste any of these API keys in Telegram — SkyClaw detects the provider automat
 | Tool | Description |
 |------|-------------|
 | **Shell** | Run any command on your server |
-| **Browser** | Headless Chrome — navigate, click, type, screenshot, extract text |
+| **Browser** | Stealth headless Chrome — anti-detection patches, session persistence, navigate, click, type, screenshot |
 | **File ops** | Read, write, list files on the server |
 | **Web fetch** | HTTP GET with token-budgeted response extraction |
 | **Git** | Clone, pull, push, commit, branch, diff, log |
@@ -160,6 +160,7 @@ skyclaw (binary)
 - **Vault encryption**: ChaCha20-Poly1305 with vault:// URI scheme for secrets.
 - **Path traversal protection**: File names sanitized, directory components stripped.
 - **Force-push blocked**: Git tool blocks destructive operations by default.
+- **Credential message deletion**: API keys and passwords are auto-deleted from chat history after reading.
 
 ## Self-Configuration
 
@@ -186,7 +187,7 @@ skyclaw version            Show version info
 ```bash
 cargo check --workspace                                    # Quick compilation check
 cargo build --workspace                                    # Debug build
-cargo test --workspace                                     # Run all 905 tests
+cargo test --workspace                                     # Run all 1012 tests
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint (0 warnings)
 cargo fmt --all                                            # Format
 cargo build --release                                      # Release build
@@ -201,6 +202,8 @@ cargo build --release                                      # Release build
 ## Release Timeline
 
 ```
+2026-03-09  v1.2.0  ●━━━ Stealth browser — anti-detection patches, session persistence, credential deletion, 1012 tests
+                    │
 2026-03-08  v1.1.0  ●━━━ Provider expansion — 6 LLM providers, hot-reload, channel docs, path fixes
                     │
 2026-03-08  v1.0.0  ●━━━ AGENTIC CORE — 35 features, 20 autonomy modules, vision support, 905 tests
