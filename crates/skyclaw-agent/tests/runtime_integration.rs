@@ -28,7 +28,7 @@ async fn simple_text_response() {
     let msg = make_inbound_msg("Hi there");
     let mut session = make_session();
 
-    let reply = runtime
+    let (reply, _turn_usage) = runtime
         .process_message(&msg, &mut session, None, None)
         .await
         .unwrap();
@@ -63,7 +63,7 @@ async fn runtime_with_no_text_in_inbound_msg() {
     msg.text = None;
     let mut session = make_session();
 
-    let reply = runtime
+    let (reply, _turn_usage) = runtime
         .process_message(&msg, &mut session, None, None)
         .await
         .unwrap();
@@ -123,7 +123,7 @@ async fn runtime_with_memory_entries() {
 
     let msg = make_inbound_msg("Tell me about Rust");
     let mut session = make_session();
-    let reply = runtime
+    let (reply, _turn_usage) = runtime
         .process_message(&msg, &mut session, None, None)
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn multiple_messages_in_sequence() {
 
     for i in 0..3 {
         let msg = make_inbound_msg(&format!("Message {i}"));
-        let reply = runtime
+        let (reply, _turn_usage) = runtime
             .process_message(&msg, &mut session, None, None)
             .await
             .unwrap();

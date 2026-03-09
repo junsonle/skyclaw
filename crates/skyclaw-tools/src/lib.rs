@@ -10,6 +10,7 @@ mod memory_manage;
 mod send_file;
 mod send_message;
 mod shell;
+mod usage_audit;
 mod web_fetch;
 
 #[cfg(feature = "browser")]
@@ -22,10 +23,11 @@ pub use memory_manage::MemoryManageTool;
 pub use send_file::SendFileTool;
 pub use send_message::SendMessageTool;
 pub use shell::ShellTool;
+pub use usage_audit::UsageAuditTool;
 pub use web_fetch::WebFetchTool;
 
 use skyclaw_core::types::config::ToolsConfig;
-use skyclaw_core::{Channel, Memory, SetupLinkGenerator, Tool};
+use skyclaw_core::{Channel, Memory, SetupLinkGenerator, Tool, UsageStore};
 use std::sync::Arc;
 
 /// Create tools based on the configuration flags.
@@ -39,6 +41,7 @@ pub fn create_tools(
     pending_messages: Option<PendingMessages>,
     memory: Option<Arc<dyn Memory>>,
     setup_link_gen: Option<Arc<dyn SetupLinkGenerator>>,
+    usage_store: Option<Arc<dyn UsageStore>>,
 ) -> Vec<Arc<dyn Tool>> {
     let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
 
@@ -83,6 +86,11 @@ pub fn create_tools(
 
     // key_manage: generates setup links and guides users through key operations
     tools.push(Arc::new(KeyManageTool::new(setup_link_gen)));
+
+    // usage_audit: query usage stats and toggle usage display
+    if let Some(store) = usage_store {
+        tools.push(Arc::new(UsageAuditTool::new(store)));
+    }
 
     // browser: headless Chrome automation (stealth mode)
     #[cfg(feature = "browser")]

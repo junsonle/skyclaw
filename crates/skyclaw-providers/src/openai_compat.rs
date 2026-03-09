@@ -458,7 +458,13 @@ impl Provider for OpenAICompatProvider {
             SkyclawError::Provider(format!(
                 "Failed to parse OpenAI-compat response: {e}\nRaw body: {}",
                 if body_text.len() > 500 {
-                    format!("{}...", &body_text[..500])
+                    let end = body_text
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= 500)
+                        .last()
+                        .unwrap_or(0);
+                    format!("{}...", &body_text[..end])
                 } else {
                     body_text.clone()
                 }

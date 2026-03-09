@@ -382,7 +382,7 @@ impl Default for AgentConfig {
             streaming_enabled: true,
             streaming_flush_interval_ms: 1000,
             streaming_tool_updates: true,
-            max_spend_usd: 1.0,
+            max_spend_usd: 0.0,
         }
     }
 }
@@ -403,7 +403,7 @@ fn default_streaming_flush_interval_ms() -> u64 {
     1000
 }
 fn default_max_spend_usd() -> f64 {
-    1.0
+    0.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

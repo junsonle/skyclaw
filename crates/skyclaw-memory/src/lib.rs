@@ -12,10 +12,12 @@ pub mod failover;
 pub mod markdown;
 pub mod search;
 pub mod sqlite;
+pub mod sqlite_usage;
 
 pub use failover::{FailoverConfig, MemoryHealthStatus, ResilientMemory};
 pub use markdown::MarkdownMemory;
 pub use sqlite::SqliteMemory;
+pub use sqlite_usage::SqliteUsageStore;
 
 use skyclaw_core::error::SkyclawError;
 use skyclaw_core::Memory;

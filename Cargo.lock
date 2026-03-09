@@ -4106,11 +4106,14 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64",
+ "chrono",
  "clap",
  "dirs",
+ "futures",
  "hex",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "skyclaw-agent",
  "skyclaw-automation",
  "skyclaw-channels",
@@ -4127,6 +4130,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

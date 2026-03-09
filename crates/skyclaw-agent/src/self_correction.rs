@@ -67,7 +67,13 @@ impl FailureTracker {
             .map(|(i, (_, err))| {
                 // Truncate very long error messages for the prompt
                 let truncated = if err.len() > 500 {
-                    format!("{}...", &err[..500])
+                    let end = err
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= 500)
+                        .last()
+                        .unwrap_or(0);
+                    format!("{}...", &err[..end])
                 } else {
                     err.clone()
                 };

@@ -404,7 +404,14 @@ fn build_chat_digest(messages: &[&ChatMessage]) -> Option<ChatMessage> {
 
         // Truncate long assistant replies to keep the digest compact
         let display = if role_label == "Assistant" && trimmed.len() > 200 {
-            format!("{}...", &trimmed[..200])
+            // Find a char boundary at or before byte 200
+            let end = trimmed
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 200)
+                .last()
+                .unwrap_or(0);
+            format!("{}...", &trimmed[..end])
         } else {
             trimmed.to_string()
         };
@@ -463,8 +470,18 @@ fn generate_dropped_summary(dropped_msgs: &[ChatMessage], count: usize) -> Strin
         match &msg.content {
             MessageContent::Text(t) => {
                 if matches!(msg.role, Role::User) && t.len() > 5 {
-                    // Take first 50 chars as a topic hint
-                    let topic = if t.len() > 50 { &t[..50] } else { t };
+                    // Take first ~50 bytes as a topic hint (safe on char boundary)
+                    let topic = if t.len() > 50 {
+                        let end = t
+                            .char_indices()
+                            .map(|(i, _)| i)
+                            .take_while(|&i| i <= 50)
+                            .last()
+                            .unwrap_or(0);
+                        &t[..end]
+                    } else {
+                        t
+                    };
                     topics.push(topic.to_string());
                 }
             }

@@ -10,6 +10,7 @@ mod setup;
 mod tenant;
 mod tool;
 mod tunnel;
+mod usage;
 mod vault;
 
 pub use channel::*;
@@ -24,4 +25,5 @@ pub use setup::*;
 pub use tenant::*;
 pub use tool::*;
 pub use tunnel::*;
+pub use usage::*;
 pub use vault::*;

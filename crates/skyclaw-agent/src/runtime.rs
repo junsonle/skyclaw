@@ -10,6 +10,7 @@ use base64::Engine;
 use skyclaw_core::types::error::SkyclawError;
 use skyclaw_core::types::message::{
     ChatMessage, ContentPart, InboundMessage, MessageContent, OutboundMessage, ParseMode, Role,
+    TurnUsage,
 };
 use skyclaw_core::types::session::SessionContext;
 use skyclaw_core::{Memory, Provider, Tool};
@@ -140,13 +141,20 @@ impl AgentRuntime {
         session: &mut SessionContext,
         interrupt: Option<Arc<AtomicBool>>,
         pending: Option<PendingMessages>,
-    ) -> Result<OutboundMessage, SkyclawError> {
+    ) -> Result<(OutboundMessage, TurnUsage), SkyclawError> {
         info!(
             channel = %msg.channel,
             chat_id = %msg.chat_id,
             user_id = %msg.user_id,
             "Processing inbound message"
         );
+
+        // Per-turn usage accumulators
+        let mut turn_api_calls: u32 = 0;
+        let mut turn_input_tokens: u32 = 0;
+        let mut turn_output_tokens: u32 = 0;
+        let mut turn_tools_used: u32 = 0;
+        let mut turn_cost_usd: f64 = 0.0;
 
         // Build user text — include attachment descriptions if no text provided
         let user_text = match (&msg.text, msg.attachments.is_empty()) {
@@ -164,13 +172,16 @@ impl AgentRuntime {
                 descs.join(" ")
             }
             _ => {
-                return Ok(OutboundMessage {
-                    chat_id: msg.chat_id.clone(),
-                    text: "I received an empty message. Please send some text or a file."
-                        .to_string(),
-                    reply_to: Some(msg.id.clone()),
-                    parse_mode: None,
-                });
+                return Ok((
+                    OutboundMessage {
+                        chat_id: msg.chat_id.clone(),
+                        text: "I received an empty message. Please send some text or a file."
+                            .to_string(),
+                        reply_to: Some(msg.id.clone()),
+                        parse_mode: None,
+                    },
+                    TurnUsage::default(),
+                ));
             }
         };
         let detected_creds = skyclaw_vault::detect_credentials(&user_text);
@@ -343,23 +354,45 @@ impl AgentRuntime {
 
             // Check budget before calling provider
             if let Err(budget_err) = self.budget.check_budget() {
-                return Ok(OutboundMessage {
-                    chat_id: msg.chat_id.clone(),
-                    text: budget_err,
-                    reply_to: Some(msg.id.clone()),
-                    parse_mode: Some(ParseMode::Plain),
-                });
+                return Ok((
+                    OutboundMessage {
+                        chat_id: msg.chat_id.clone(),
+                        text: budget_err,
+                        reply_to: Some(msg.id.clone()),
+                        parse_mode: Some(ParseMode::Plain),
+                    },
+                    TurnUsage {
+                        api_calls: turn_api_calls,
+                        input_tokens: turn_input_tokens,
+                        output_tokens: turn_output_tokens,
+                        tools_used: turn_tools_used,
+                        total_cost_usd: turn_cost_usd,
+                        provider: self.provider.name().to_string(),
+                        model: self.model.clone(),
+                    },
+                ));
             }
 
             // Check circuit breaker before calling provider
             if !self.circuit_breaker.can_execute() {
                 warn!("Circuit breaker is open — provider appears to be down");
-                return Ok(OutboundMessage {
-                    chat_id: msg.chat_id.clone(),
-                    text: "The AI provider is currently unavailable. I'll retry automatically when it recovers.".to_string(),
-                    reply_to: Some(msg.id.clone()),
-                    parse_mode: Some(ParseMode::Plain),
-                });
+                return Ok((
+                    OutboundMessage {
+                        chat_id: msg.chat_id.clone(),
+                        text: "The AI provider is currently unavailable. I'll retry automatically when it recovers.".to_string(),
+                        reply_to: Some(msg.id.clone()),
+                        parse_mode: Some(ParseMode::Plain),
+                    },
+                    TurnUsage {
+                        api_calls: turn_api_calls,
+                        input_tokens: turn_input_tokens,
+                        output_tokens: turn_output_tokens,
+                        tools_used: turn_tools_used,
+                        total_cost_usd: turn_cost_usd,
+                        provider: self.provider.name().to_string(),
+                        model: self.model.clone(),
+                    },
+                ));
             }
 
             let response = match self.provider.complete(request).await {
@@ -384,6 +417,12 @@ impl AgentRuntime {
                 response.usage.output_tokens,
                 call_cost,
             );
+
+            // Accumulate per-turn metrics
+            turn_api_calls += 1;
+            turn_input_tokens += response.usage.input_tokens;
+            turn_output_tokens += response.usage.output_tokens;
+            turn_cost_usd += call_cost;
 
             // Separate text content from tool-use content
             let mut text_parts: Vec<String> = Vec::new();
@@ -461,12 +500,23 @@ impl AgentRuntime {
                     }
                 }
 
-                return Ok(OutboundMessage {
-                    chat_id: msg.chat_id.clone(),
-                    text: reply_text,
-                    reply_to: Some(msg.id.clone()),
-                    parse_mode: None,
-                });
+                return Ok((
+                    OutboundMessage {
+                        chat_id: msg.chat_id.clone(),
+                        text: reply_text,
+                        reply_to: Some(msg.id.clone()),
+                        parse_mode: None,
+                    },
+                    TurnUsage {
+                        api_calls: turn_api_calls,
+                        input_tokens: turn_input_tokens,
+                        output_tokens: turn_output_tokens,
+                        tools_used: turn_tools_used,
+                        total_cost_usd: turn_cost_usd,
+                        provider: self.provider.name().to_string(),
+                        model: self.model.clone(),
+                    },
+                ));
             }
 
             // Record the assistant message (with tool_use parts) in history
@@ -479,6 +529,7 @@ impl AgentRuntime {
             let mut tool_result_parts: Vec<ContentPart> = Vec::new();
 
             for (tool_use_id, tool_name, arguments) in &tool_uses {
+                turn_tools_used += 1;
                 info!(tool = %tool_name, id = %tool_use_id, "Executing tool call");
 
                 let result = execute_tool(tool_name, arguments.clone(), &self.tools, session).await;
@@ -608,12 +659,23 @@ impl AgentRuntime {
             "I reached the maximum number of tool execution steps. Here is what I have so far. Please let me know if you need me to continue.".to_string()
         };
 
-        Ok(OutboundMessage {
-            chat_id: msg.chat_id.clone(),
-            text,
-            reply_to: Some(msg.id.clone()),
-            parse_mode: Some(ParseMode::Plain),
-        })
+        Ok((
+            OutboundMessage {
+                chat_id: msg.chat_id.clone(),
+                text,
+                reply_to: Some(msg.id.clone()),
+                parse_mode: Some(ParseMode::Plain),
+            },
+            TurnUsage {
+                api_calls: turn_api_calls,
+                input_tokens: turn_input_tokens,
+                output_tokens: turn_output_tokens,
+                tools_used: turn_tools_used,
+                total_cost_usd: turn_cost_usd,
+                provider: self.provider.name().to_string(),
+                model: self.model.clone(),
+            },
+        ))
     }
 
     /// Get a reference to the provider.

@@ -127,6 +127,65 @@ pub struct Usage {
     pub cost_usd: f64,
 }
 
+/// Per-turn usage metrics returned after processing a message through the agent loop.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TurnUsage {
+    /// Number of LLM API calls made during this turn.
+    pub api_calls: u32,
+    /// Total input tokens consumed across all API calls in this turn.
+    pub input_tokens: u32,
+    /// Total output tokens consumed across all API calls in this turn.
+    pub output_tokens: u32,
+    /// Number of tool executions during this turn.
+    pub tools_used: u32,
+    /// Total estimated cost in USD for this turn.
+    pub total_cost_usd: f64,
+    /// Provider name (e.g., "anthropic", "openai").
+    pub provider: String,
+    /// Model name (e.g., "claude-sonnet-4-6").
+    pub model: String,
+}
+
+impl TurnUsage {
+    /// Combined (input + output) token count.
+    pub fn combined_tokens(&self) -> u32 {
+        self.input_tokens + self.output_tokens
+    }
+
+    /// Format as a multi-line, messenger-agnostic usage summary.
+    pub fn format_summary(&self) -> String {
+        format!(
+            "Model: {}\n\
+             API Calls: {}\n\
+             Input Tokens: {}\n\
+             Output Tokens: {}\n\
+             Tools Used: {}\n\
+             Combined Tokens: {}\n\
+             Total Cost: ${:.4}",
+            self.model,
+            self.api_calls,
+            format_number(self.input_tokens),
+            format_number(self.output_tokens),
+            self.tools_used,
+            format_number(self.combined_tokens()),
+            self.total_cost_usd,
+        )
+    }
+}
+
+/// Format a number with comma separators (e.g., 12450 -> "12,450").
+fn format_number(n: u32) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +305,57 @@ mod tests {
 
         let restored: Role = serde_json::from_str("\"user\"").unwrap();
         assert!(matches!(restored, Role::User));
+    }
+
+    #[test]
+    fn turn_usage_combined_tokens() {
+        let usage = TurnUsage {
+            api_calls: 2,
+            input_tokens: 5000,
+            output_tokens: 1500,
+            tools_used: 1,
+            total_cost_usd: 0.03,
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+        };
+        assert_eq!(usage.combined_tokens(), 6500);
+    }
+
+    #[test]
+    fn turn_usage_format_summary() {
+        let usage = TurnUsage {
+            api_calls: 3,
+            input_tokens: 12450,
+            output_tokens: 1823,
+            tools_used: 2,
+            total_cost_usd: 0.0524,
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+        };
+        let summary = usage.format_summary();
+        assert!(summary.contains("Model: claude-sonnet-4-6"));
+        assert!(summary.contains("API Calls: 3"));
+        assert!(summary.contains("Input Tokens: 12,450"));
+        assert!(summary.contains("Output Tokens: 1,823"));
+        assert!(summary.contains("Tools Used: 2"));
+        assert!(summary.contains("Combined Tokens: 14,273"));
+        assert!(summary.contains("Total Cost: $0.0524"));
+    }
+
+    #[test]
+    fn turn_usage_default() {
+        let usage = TurnUsage::default();
+        assert_eq!(usage.api_calls, 0);
+        assert_eq!(usage.combined_tokens(), 0);
+        assert!(usage.format_summary().contains("Model: "));
+    }
+
+    #[test]
+    fn format_number_with_commas() {
+        assert_eq!(format_number(0), "0");
+        assert_eq!(format_number(999), "999");
+        assert_eq!(format_number(1000), "1,000");
+        assert_eq!(format_number(12450), "12,450");
+        assert_eq!(format_number(1000000), "1,000,000");
     }
 }

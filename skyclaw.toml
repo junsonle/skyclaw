@@ -12,7 +12,7 @@ api_key = "${ANTHROPIC_API_KEY}"
 model = "claude-sonnet-4-6"
 
 [agent]
-max_spend_usd = 1.00
+# max_spend_usd = 0.0  # 0.0 = unlimited (default). Set a value to cap per-process spend.
 
 [memory]
 backend = "sqlite"

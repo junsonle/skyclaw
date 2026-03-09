@@ -1,5 +1,5 @@
-//! Session budget tracker -- tracks cumulative token usage and cost,
-//! and enforces a configurable spend limit per session.
+//! Budget tracker -- tracks cumulative token usage and cost per process
+//! lifetime, and enforces a configurable spend limit (0.0 = unlimited).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{info, warn};
@@ -11,48 +11,153 @@ pub struct ModelPricing {
     pub output_per_million: f64,
 }
 
-/// Returns pricing for known providers/models. Falls back to a conservative default.
+/// Returns pricing for known providers/models (USD per 1M tokens).
+/// Pricing last verified: March 2026.
 pub fn get_pricing(model: &str) -> ModelPricing {
-    // Conservative defaults -- use the most expensive common pricing
-    // so budget enforcement errs on the side of caution.
-    match model {
-        // Anthropic
-        m if m.contains("opus") => ModelPricing {
-            input_per_million: 15.0,
-            output_per_million: 75.0,
+    let m = model.to_lowercase();
+    match m.as_str() {
+        // ── Anthropic ────────────────────────────────────────────
+        _ if m.contains("opus")
+            && (m.contains("4-6")
+                || m.contains("4-5")
+                || m.contains("4.5")
+                || m.contains("4.6")) =>
+        {
+            ModelPricing {
+                input_per_million: 5.0,
+                output_per_million: 25.0,
+            }
+        }
+        _ if m.contains("opus") => ModelPricing {
+            input_per_million: 5.0,
+            output_per_million: 25.0,
         },
-        m if m.contains("sonnet") => ModelPricing {
+        _ if m.contains("sonnet")
+            && (m.contains("4-6")
+                || m.contains("4-5")
+                || m.contains("4.5")
+                || m.contains("4.6")
+                || m.contains("sonnet-4")) =>
+        {
+            ModelPricing {
+                input_per_million: 3.0,
+                output_per_million: 15.0,
+            }
+        }
+        _ if m.contains("sonnet") => ModelPricing {
             input_per_million: 3.0,
             output_per_million: 15.0,
         },
-        m if m.contains("haiku") => ModelPricing {
+        _ if m.contains("haiku") && (m.contains("4-5") || m.contains("4.5")) => ModelPricing {
+            input_per_million: 1.0,
+            output_per_million: 5.0,
+        },
+        _ if m.contains("haiku") && (m.contains("3-5") || m.contains("3.5")) => ModelPricing {
             input_per_million: 0.80,
             output_per_million: 4.0,
         },
-        // OpenAI
-        m if m.contains("gpt-4o") => ModelPricing {
+        _ if m.contains("haiku") => ModelPricing {
+            input_per_million: 1.0,
+            output_per_million: 5.0,
+        },
+
+        // ── OpenAI ───────────────────────────────────────────────
+        _ if m.contains("gpt-5.2") || m.contains("gpt-5-2") => ModelPricing {
+            input_per_million: 1.75,
+            output_per_million: 14.0,
+        },
+        _ if m.contains("gpt-5") && !m.contains("gpt-5.2") && !m.contains("gpt-5-2") => {
+            ModelPricing {
+                input_per_million: 1.25,
+                output_per_million: 10.0,
+            }
+        }
+        _ if m.contains("gpt-4o-mini") => ModelPricing {
+            input_per_million: 0.15,
+            output_per_million: 0.60,
+        },
+        _ if m.contains("gpt-4o") => ModelPricing {
             input_per_million: 2.50,
             output_per_million: 10.0,
         },
-        m if m.contains("gpt-4") => ModelPricing {
-            input_per_million: 10.0,
-            output_per_million: 30.0,
+        _ if m.contains("gpt-4") => ModelPricing {
+            input_per_million: 2.50,
+            output_per_million: 10.0,
         },
-        m if m.contains("gpt-3.5") => ModelPricing {
-            input_per_million: 0.50,
-            output_per_million: 1.50,
+        _ if m == "o3" || m.starts_with("o3-") => ModelPricing {
+            input_per_million: 2.0,
+            output_per_million: 8.0,
         },
-        // Gemini
-        m if m.contains("gemini") => ModelPricing {
-            input_per_million: 0.35,
-            output_per_million: 1.05,
+        _ if m == "o4-mini" || m.starts_with("o4-mini") => ModelPricing {
+            input_per_million: 1.10,
+            output_per_million: 4.40,
         },
-        // Grok
-        m if m.contains("grok") => ModelPricing {
+
+        // ── Google Gemini ────────────────────────────────────────
+        _ if m.contains("gemini-2.5-pro") || m.contains("gemini-2-5-pro") => ModelPricing {
+            input_per_million: 1.25,
+            output_per_million: 10.0,
+        },
+        _ if m.contains("gemini-2.5-flash") || m.contains("gemini-2-5-flash") => ModelPricing {
+            input_per_million: 0.30,
+            output_per_million: 2.50,
+        },
+        _ if m.contains("gemini-2.0-flash") || m.contains("gemini-2-0-flash") => ModelPricing {
+            input_per_million: 0.10,
+            output_per_million: 0.40,
+        },
+        _ if m.contains("gemini") => ModelPricing {
+            input_per_million: 0.30,
+            output_per_million: 2.50,
+        },
+
+        // ── xAI Grok ─────────────────────────────────────────────
+        _ if m.contains("grok-4") && m.contains("fast") => ModelPricing {
+            input_per_million: 0.20,
+            output_per_million: 0.50,
+        },
+        _ if m.contains("grok-4-1") && !m.contains("fast") => ModelPricing {
             input_per_million: 3.0,
             output_per_million: 15.0,
         },
-        // Default: assume Sonnet-class pricing (conservative)
+        _ if m.contains("grok-4") => ModelPricing {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+        },
+        _ if m.contains("grok-3") && m.contains("fast") => ModelPricing {
+            input_per_million: 0.20,
+            output_per_million: 0.50,
+        },
+        _ if m.contains("grok-3") => ModelPricing {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+        },
+        _ if m.contains("grok") => ModelPricing {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+        },
+
+        // ── MiniMax ──────────────────────────────────────────────
+        _ if m.contains("minimax") || m.starts_with("m2") => ModelPricing {
+            input_per_million: 0.30,
+            output_per_million: 1.20,
+        },
+
+        // ── Ollama (subscription-based, no per-token cost) ───────
+        _ if m.contains("llama")
+            || m.contains("mistral")
+            || m.contains("qwen")
+            || m.contains("phi")
+            || m.contains("codellama")
+            || m.contains("glm") =>
+        {
+            ModelPricing {
+                input_per_million: 0.0,
+                output_per_million: 0.0,
+            }
+        }
+
+        // ── Default: Sonnet-class pricing (conservative) ─────────
         _ => ModelPricing {
             input_per_million: 3.0,
             output_per_million: 15.0,
@@ -131,8 +236,8 @@ impl BudgetTracker {
                 "Budget exceeded"
             );
             Err(format!(
-                "Session budget exceeded: ${:.4} spent of ${:.2} limit. \
-                 Send a new message to start a fresh session, or increase the budget in config.",
+                "Budget exceeded: ${:.4} spent of ${:.2} limit. \
+                 Increase `max_spend_usd` in config or set to 0 for unlimited, then restart.",
                 spent, limit
             ))
         } else {
@@ -233,7 +338,7 @@ mod tests {
         let result = tracker.check_budget();
         assert!(result.is_err());
         let err_msg = result.unwrap_err();
-        assert!(err_msg.contains("budget exceeded"));
+        assert!(err_msg.contains("Budget exceeded"));
         assert!(err_msg.contains("$1.00"));
     }
 
@@ -262,24 +367,45 @@ mod tests {
     }
 
     #[test]
-    fn get_pricing_opus() {
+    fn get_pricing_opus_4_6() {
         let pricing = get_pricing("claude-opus-4-6");
-        assert!((pricing.input_per_million - 15.0).abs() < 1e-9);
-        assert!((pricing.output_per_million - 75.0).abs() < 1e-9);
+        assert!((pricing.input_per_million - 5.0).abs() < 1e-9);
+        assert!((pricing.output_per_million - 25.0).abs() < 1e-9);
     }
 
     #[test]
-    fn get_pricing_sonnet() {
+    fn get_pricing_sonnet_4_6() {
         let pricing = get_pricing("claude-sonnet-4-6");
         assert!((pricing.input_per_million - 3.0).abs() < 1e-9);
         assert!((pricing.output_per_million - 15.0).abs() < 1e-9);
     }
 
     #[test]
-    fn get_pricing_haiku() {
-        let pricing = get_pricing("claude-3-haiku");
+    fn get_pricing_haiku_4_5() {
+        let pricing = get_pricing("claude-haiku-4-5");
+        assert!((pricing.input_per_million - 1.0).abs() < 1e-9);
+        assert!((pricing.output_per_million - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_haiku_3_5() {
+        let pricing = get_pricing("claude-3-5-haiku");
         assert!((pricing.input_per_million - 0.80).abs() < 1e-9);
         assert!((pricing.output_per_million - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_gpt5_2() {
+        let pricing = get_pricing("gpt-5.2");
+        assert!((pricing.input_per_million - 1.75).abs() < 1e-9);
+        assert!((pricing.output_per_million - 14.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_gpt5() {
+        let pricing = get_pricing("gpt-5");
+        assert!((pricing.input_per_million - 1.25).abs() < 1e-9);
+        assert!((pricing.output_per_million - 10.0).abs() < 1e-9);
     }
 
     #[test]
@@ -290,31 +416,80 @@ mod tests {
     }
 
     #[test]
-    fn get_pricing_gpt4() {
-        let pricing = get_pricing("gpt-4-turbo");
-        assert!((pricing.input_per_million - 10.0).abs() < 1e-9);
-        assert!((pricing.output_per_million - 30.0).abs() < 1e-9);
+    fn get_pricing_gpt4o_mini() {
+        let pricing = get_pricing("gpt-4o-mini");
+        assert!((pricing.input_per_million - 0.15).abs() < 1e-9);
+        assert!((pricing.output_per_million - 0.60).abs() < 1e-9);
     }
 
     #[test]
-    fn get_pricing_gpt35() {
-        let pricing = get_pricing("gpt-3.5-turbo");
-        assert!((pricing.input_per_million - 0.50).abs() < 1e-9);
-        assert!((pricing.output_per_million - 1.50).abs() < 1e-9);
+    fn get_pricing_o3() {
+        let pricing = get_pricing("o3");
+        assert!((pricing.input_per_million - 2.0).abs() < 1e-9);
+        assert!((pricing.output_per_million - 8.0).abs() < 1e-9);
     }
 
     #[test]
-    fn get_pricing_gemini() {
-        let pricing = get_pricing("gemini-1.5-pro");
-        assert!((pricing.input_per_million - 0.35).abs() < 1e-9);
-        assert!((pricing.output_per_million - 1.05).abs() < 1e-9);
+    fn get_pricing_o4_mini() {
+        let pricing = get_pricing("o4-mini");
+        assert!((pricing.input_per_million - 1.10).abs() < 1e-9);
+        assert!((pricing.output_per_million - 4.40).abs() < 1e-9);
     }
 
     #[test]
-    fn get_pricing_grok() {
-        let pricing = get_pricing("grok-2");
+    fn get_pricing_gemini_2_5_pro() {
+        let pricing = get_pricing("gemini-2.5-pro");
+        assert!((pricing.input_per_million - 1.25).abs() < 1e-9);
+        assert!((pricing.output_per_million - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_gemini_2_5_flash() {
+        let pricing = get_pricing("gemini-2.5-flash");
+        assert!((pricing.input_per_million - 0.30).abs() < 1e-9);
+        assert!((pricing.output_per_million - 2.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_gemini_2_0_flash() {
+        let pricing = get_pricing("gemini-2.0-flash");
+        assert!((pricing.input_per_million - 0.10).abs() < 1e-9);
+        assert!((pricing.output_per_million - 0.40).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_grok4() {
+        let pricing = get_pricing("grok-4");
         assert!((pricing.input_per_million - 3.0).abs() < 1e-9);
         assert!((pricing.output_per_million - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_grok4_fast() {
+        let pricing = get_pricing("grok-4-1-fast");
+        assert!((pricing.input_per_million - 0.20).abs() < 1e-9);
+        assert!((pricing.output_per_million - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_minimax() {
+        let pricing = get_pricing("m2.5");
+        assert!((pricing.input_per_million - 0.30).abs() < 1e-9);
+        assert!((pricing.output_per_million - 1.20).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_ollama_llama() {
+        let pricing = get_pricing("llama3.3");
+        assert!((pricing.input_per_million).abs() < 1e-9);
+        assert!((pricing.output_per_million).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_pricing_ollama_glm() {
+        let pricing = get_pricing("glm-5");
+        assert!((pricing.input_per_million).abs() < 1e-9);
+        assert!((pricing.output_per_million).abs() < 1e-9);
     }
 
     #[test]

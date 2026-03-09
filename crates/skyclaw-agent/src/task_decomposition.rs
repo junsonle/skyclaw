@@ -276,7 +276,13 @@ impl TaskGraph {
                     Some(r) if task.status == SubTaskStatus::Completed => {
                         // Truncate long results in the prompt
                         let truncated = if r.len() > 200 {
-                            format!("{}...", &r[..200])
+                            let end = r
+                                .char_indices()
+                                .map(|(i, _)| i)
+                                .take_while(|&i| i <= 200)
+                                .last()
+                                .unwrap_or(0);
+                            format!("{}...", &r[..end])
                         } else {
                             r.clone()
                         };

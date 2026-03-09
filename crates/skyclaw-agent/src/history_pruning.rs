@@ -650,7 +650,13 @@ pub fn generate_pruned_summary(dropped: &[&ChatMessage]) -> String {
             MessageContent::Text(text) => {
                 if matches!(msg.role, Role::User) && text.trim().len() > 3 {
                     let topic = if text.len() > 60 {
-                        format!("{}...", &text[..57])
+                        let end = text
+                            .char_indices()
+                            .map(|(i, _)| i)
+                            .take_while(|&i| i <= 57)
+                            .last()
+                            .unwrap_or(0);
+                        format!("{}...", &text[..end])
                     } else {
                         text.clone()
                     };

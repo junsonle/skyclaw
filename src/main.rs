@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use base64::Engine as _;
 use clap::{Parser, Subcommand};
+use futures::FutureExt;
 use skyclaw_core::Channel;
 use tokio::sync::Mutex;
 
@@ -1044,6 +1046,27 @@ async fn main() -> Result<()> {
         .json()
         .init();
 
+    // ── Global panic hook — route panics through tracing ─────
+    // Without this, panics only write to stderr and are invisible in structured logs.
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        tracing::error!(
+            panic.payload = %payload,
+            panic.location = %location,
+            "PANIC caught — task will attempt recovery"
+        );
+    }));
+
     // Load configuration
     let config_path = cli.config.as_ref().map(std::path::Path::new);
     let config = skyclaw_core::config::load_config(config_path)?;
@@ -1121,6 +1144,11 @@ async fn main() -> Result<()> {
             let pending_raw_keys: Arc<Mutex<HashSet<String>>> =
                 Arc::new(Mutex::new(HashSet::new()));
 
+            // ── Usage store (shares same SQLite DB as memory) ────
+            let usage_store: Arc<dyn skyclaw_core::UsageStore> =
+                Arc::new(skyclaw_memory::SqliteUsageStore::new(&memory_url).await?);
+            tracing::info!("Usage store initialized");
+
             // ── Tools (with secret-censoring channel wrapper) ───
             let censored_channel: Option<Arc<dyn Channel>> = primary_channel
                 .clone()
@@ -1131,6 +1159,7 @@ async fn main() -> Result<()> {
                 Some(pending_messages.clone()),
                 Some(memory.clone()),
                 Some(Arc::new(setup_tokens.clone()) as Arc<dyn skyclaw_core::SetupLinkGenerator>),
+                Some(usage_store.clone()),
             );
             tracing::info!(count = tools.len(), "Tools initialized");
 
@@ -1256,6 +1285,7 @@ async fn main() -> Result<()> {
                 let pending_clone = pending_messages.clone();
                 let setup_tokens_clone = setup_tokens.clone();
                 let pending_raw_keys_clone = pending_raw_keys.clone();
+                let usage_store_clone = usage_store.clone();
 
                 let chat_slots: Arc<Mutex<HashMap<String, ChatSlot>>> =
                     Arc::new(Mutex::new(HashMap::new()));
@@ -1340,11 +1370,44 @@ async fn main() -> Result<()> {
                             let pending_for_worker = pending_clone.clone();
                             let setup_tokens_worker = setup_tokens_clone.clone();
                             let pending_raw_keys_worker = pending_raw_keys_clone.clone();
+                            let usage_store_worker = usage_store_clone.clone();
                             let worker_chat_id = chat_id.clone();
 
                             tokio::spawn(async move {
-                                // Persistent conversation history for this chat — survives across messages
-                                let mut persistent_history: Vec<skyclaw_core::types::message::ChatMessage> = Vec::new();
+                                // ── Restore conversation history from memory backend ──
+                                let history_key = format!("chat_history:{}", worker_chat_id);
+                                let mut persistent_history: Vec<skyclaw_core::types::message::ChatMessage> =
+                                    match memory.get(&history_key).await {
+                                        Ok(Some(entry)) => {
+                                            match serde_json::from_str(&entry.content) {
+                                                Ok(h) => {
+                                                    tracing::info!(
+                                                        chat_id = %worker_chat_id,
+                                                        messages = %Vec::<skyclaw_core::types::message::ChatMessage>::len(&h),
+                                                        "Restored conversation history from memory"
+                                                    );
+                                                    h
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        chat_id = %worker_chat_id,
+                                                        error = %e,
+                                                        "Failed to deserialize saved history, starting fresh"
+                                                    );
+                                                    Vec::new()
+                                                }
+                                            }
+                                        }
+                                        Ok(None) => Vec::new(),
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                chat_id = %worker_chat_id,
+                                                error = %e,
+                                                "Failed to load saved history, starting fresh"
+                                            );
+                                            Vec::new()
+                                        }
+                                    };
 
                                 while let Some(mut msg) = chat_rx.recv().await {
                                     let is_hb = msg.channel == "heartbeat";
@@ -1434,6 +1497,38 @@ async fn main() -> Result<()> {
                                             tracing::info!("All providers removed — agent offline");
                                         }
 
+                                        is_heartbeat_clone.store(false, Ordering::Relaxed);
+                                        continue;
+                                    }
+
+                                    // /usage — show usage summary
+                                    if cmd_lower == "/usage" {
+                                        let summary_text = match usage_store_worker.usage_summary(&msg.chat_id).await {
+                                            Ok(summary) => {
+                                                if summary.turn_count == 0 {
+                                                    "No usage records for this chat yet.".to_string()
+                                                } else {
+                                                    format!(
+                                                        "Usage Summary\nTurns: {}\nAPI Calls: {}\nInput Tokens: {}\nOutput Tokens: {}\nCombined Tokens: {}\nTools Used: {}\nTotal Cost: ${:.4}",
+                                                        summary.turn_count,
+                                                        summary.total_api_calls,
+                                                        summary.total_input_tokens,
+                                                        summary.total_output_tokens,
+                                                        summary.combined_tokens(),
+                                                        summary.total_tools_used,
+                                                        summary.total_cost_usd,
+                                                    )
+                                                }
+                                            }
+                                            Err(e) => format!("Failed to query usage: {}", e),
+                                        };
+                                        let reply = skyclaw_core::types::message::OutboundMessage {
+                                            chat_id: msg.chat_id.clone(),
+                                            text: summary_text,
+                                            reply_to: Some(msg.id.clone()),
+                                            parse_mode: None,
+                                        };
+                                        let _ = sender.send_message(reply).await;
                                         is_heartbeat_clone.store(false, Ordering::Relaxed);
                                         continue;
                                     }
@@ -1677,14 +1772,60 @@ async fn main() -> Result<()> {
                                             workspace_path: workspace_path.clone(),
                                         };
 
-                                        match agent.process_message(&msg, &mut session, interrupt_flag, Some(pending_for_worker.clone())).await {
-                                            Ok(mut reply) => {
+                                        // ── Panic-guarded message processing ─────────
+                                        // Wraps process_message in catch_unwind so a panic
+                                        // in context building, tool execution, or provider
+                                        // parsing doesn't kill the per-chat worker loop.
+                                        // The worker survives and continues processing the
+                                        // next message — the user gets an error reply
+                                        // instead of permanent silence.
+                                        let process_result = AssertUnwindSafe(
+                                            agent.process_message(&msg, &mut session, interrupt_flag, Some(pending_for_worker.clone()))
+                                        )
+                                        .catch_unwind()
+                                        .await;
+
+                                        match process_result {
+                                            Ok(Ok((mut reply, turn_usage))) => {
                                                 reply.text = censor_secrets(&reply.text);
                                                 if let Err(e) = sender.send_message(reply).await {
                                                     tracing::error!(error = %e, "Failed to send reply");
                                                 }
+
+                                                // Record usage
+                                                let record = skyclaw_core::UsageRecord {
+                                                    id: uuid::Uuid::new_v4().to_string(),
+                                                    chat_id: msg.chat_id.clone(),
+                                                    session_id: format!("{}-{}", msg.channel, msg.chat_id),
+                                                    timestamp: chrono::Utc::now(),
+                                                    api_calls: turn_usage.api_calls,
+                                                    input_tokens: turn_usage.input_tokens,
+                                                    output_tokens: turn_usage.output_tokens,
+                                                    tools_used: turn_usage.tools_used,
+                                                    total_cost_usd: turn_usage.total_cost_usd,
+                                                    provider: turn_usage.provider.clone(),
+                                                    model: turn_usage.model.clone(),
+                                                };
+                                                if let Err(e) = usage_store_worker.record_usage(record).await {
+                                                    tracing::error!(error = %e, "Failed to record usage");
+                                                }
+
+                                                // Display usage summary if enabled
+                                                if turn_usage.api_calls > 0 {
+                                                    if let Ok(enabled) = usage_store_worker.is_usage_display_enabled(&msg.chat_id).await {
+                                                        if enabled {
+                                                            let usage_msg = skyclaw_core::types::message::OutboundMessage {
+                                                                chat_id: msg.chat_id.clone(),
+                                                                text: turn_usage.format_summary(),
+                                                                reply_to: None,
+                                                                parse_mode: None,
+                                                            };
+                                                            let _ = sender.send_message(usage_msg).await;
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            Err(e) => {
+                                            Ok(Err(e)) => {
                                                 tracing::error!(error = %e, "Agent processing error");
                                                 let error_reply = skyclaw_core::types::message::OutboundMessage {
                                                     chat_id: msg.chat_id.clone(),
@@ -1694,6 +1835,35 @@ async fn main() -> Result<()> {
                                                 };
                                                 let _ = sender.send_message(error_reply).await;
                                             }
+                                            Err(panic_info) => {
+                                                // ── Panic recovered — worker stays alive ────
+                                                let panic_msg = if let Some(s) = panic_info.downcast_ref::<String>() {
+                                                    s.clone()
+                                                } else if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                                    s.to_string()
+                                                } else {
+                                                    "internal error".to_string()
+                                                };
+                                                tracing::error!(
+                                                    chat_id = %msg.chat_id,
+                                                    panic = %panic_msg,
+                                                    "PANIC RECOVERED in message processing — worker continues"
+                                                );
+                                                let error_reply = skyclaw_core::types::message::OutboundMessage {
+                                                    chat_id: msg.chat_id.clone(),
+                                                    text: "An internal error occurred while processing your message. I've recovered and am ready for your next message.".to_string(),
+                                                    reply_to: Some(msg.id.clone()),
+                                                    parse_mode: None,
+                                                };
+                                                let _ = sender.send_message(error_reply).await;
+                                                // Session history may be corrupted after a panic.
+                                                // Trim the last entry if it was partially added.
+                                                if persistent_history.len() < session.history.len() {
+                                                    // Panic happened after adding user msg but before
+                                                    // assistant reply — rollback to pre-message state.
+                                                    session.history = persistent_history.clone();
+                                                }
+                                            }
                                         }
 
                                         // ── Persist session history for next message ────
@@ -1702,6 +1872,25 @@ async fn main() -> Result<()> {
                                         if persistent_history.len() > 200 {
                                             let drain_count = persistent_history.len() - 200;
                                             persistent_history.drain(..drain_count);
+                                        }
+
+                                        // ── Save conversation history to memory backend ──
+                                        if let Ok(json) = serde_json::to_string(&persistent_history) {
+                                            let entry = skyclaw_core::MemoryEntry {
+                                                id: history_key.clone(),
+                                                content: json,
+                                                metadata: serde_json::json!({"chat_id": worker_chat_id}),
+                                                timestamp: chrono::Utc::now(),
+                                                session_id: Some(worker_chat_id.clone()),
+                                                entry_type: skyclaw_core::MemoryEntryType::Conversation,
+                                            };
+                                            if let Err(e) = memory.store(entry).await {
+                                                tracing::warn!(
+                                                    chat_id = %worker_chat_id,
+                                                    error = %e,
+                                                    "Failed to persist conversation history"
+                                                );
+                                            }
                                         }
 
                                         // ── Hot-reload: check if credentials changed ────
@@ -1897,10 +2086,20 @@ async fn main() -> Result<()> {
                             ChatSlot { tx: chat_tx, interrupt, is_heartbeat }
                         });
 
-                        // Send message into the chat's dedicated queue
+                        // Send message into the chat's dedicated queue.
+                        // Clone the sender to release the borrow on slots, so we
+                        // can remove the dead slot if the send fails.
                         if !is_heartbeat_msg {
-                            if let Err(e) = slot.tx.send(inbound).await {
-                                tracing::error!(error = %e, "Chat worker closed unexpectedly");
+                            let tx = slot.tx.clone();
+                            drop(slots); // release Mutex guard before await
+                            if let Err(e) = tx.send(inbound).await {
+                                tracing::error!(
+                                    chat_id = %chat_id,
+                                    error = %e,
+                                    "Chat worker dead — removing slot for respawn on next message"
+                                );
+                                let mut slots = chat_slots.lock().await;
+                                slots.remove(&chat_id);
                             }
                         }
                     }
@@ -1991,6 +2190,10 @@ async fn main() -> Result<()> {
             // ── OTK state ──────────────────────────────────────
             let setup_tokens = skyclaw_gateway::SetupTokenStore::new();
 
+            // ── Usage store ──────────────────────────────────────
+            let usage_store: Arc<dyn skyclaw_core::UsageStore> =
+                Arc::new(skyclaw_memory::SqliteUsageStore::new(&memory_url).await?);
+
             // ── Tools ──────────────────────────────────────────
             let pending_messages: skyclaw_tools::PendingMessages =
                 Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -2003,6 +2206,7 @@ async fn main() -> Result<()> {
                 Some(pending_messages.clone()),
                 Some(memory.clone()),
                 Some(Arc::new(setup_tokens.clone()) as Arc<dyn skyclaw_core::SetupLinkGenerator>),
+                Some(usage_store.clone()),
             );
             let base_url = config.provider.base_url.clone();
 
@@ -2053,7 +2257,11 @@ async fn main() -> Result<()> {
                                 max_spend,
                             ));
                             println!("Connected to {} (model: {})", pname, model);
-                            println!("Budget: ${:.2} per session", max_spend);
+                            if max_spend > 0.0 {
+                                println!("Budget: ${:.2} per session", max_spend);
+                            } else {
+                                println!("Budget: unlimited");
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to create provider: {}", e);
@@ -2075,7 +2283,22 @@ async fn main() -> Result<()> {
 
             // ── Message loop ───────────────────────────────────
             let mut rx = cli_rx.expect("CLI channel receiver must be available");
-            let mut history: Vec<skyclaw_core::types::message::ChatMessage> = Vec::new();
+            // ── Restore CLI conversation history from memory backend ──
+            let cli_history_key = "chat_history:cli".to_string();
+            let mut history: Vec<skyclaw_core::types::message::ChatMessage> =
+                match memory.get(&cli_history_key).await {
+                    Ok(Some(entry)) => match serde_json::from_str(&entry.content) {
+                        Ok(h) => {
+                            let count = Vec::<skyclaw_core::types::message::ChatMessage>::len(&h);
+                            if count > 0 {
+                                println!("  Restored {} messages from previous session.", count);
+                            }
+                            h
+                        }
+                        Err(_) => Vec::new(),
+                    },
+                    _ => Vec::new(),
+                };
 
             while let Some(msg) = rx.recv().await {
                 let msg_text = msg.text.as_deref().unwrap_or("");
@@ -2124,6 +2347,31 @@ async fn main() -> Result<()> {
                     if !provider_arg.is_empty() && load_active_provider_keys().is_none() {
                         agent_opt = None;
                         println!("All providers removed — agent offline.\n");
+                    }
+                    eprint!("skyclaw> ");
+                    continue;
+                }
+
+                // /usage — show usage summary
+                if cmd_lower == "/usage" {
+                    match usage_store.usage_summary(&msg.chat_id).await {
+                        Ok(summary) => {
+                            if summary.turn_count == 0 {
+                                println!("\nNo usage records for this chat yet.\n");
+                            } else {
+                                println!(
+                                    "\nUsage Summary\nTurns: {}\nAPI Calls: {}\nInput Tokens: {}\nOutput Tokens: {}\nCombined Tokens: {}\nTools Used: {}\nTotal Cost: ${:.4}\n",
+                                    summary.turn_count,
+                                    summary.total_api_calls,
+                                    summary.total_input_tokens,
+                                    summary.total_output_tokens,
+                                    summary.combined_tokens(),
+                                    summary.total_tools_used,
+                                    summary.total_cost_usd,
+                                );
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to query usage: {}", e),
                     }
                     eprint!("skyclaw> ");
                     continue;
@@ -2263,18 +2511,80 @@ async fn main() -> Result<()> {
                         workspace_path: workspace.clone(),
                     };
 
-                    match agent.process_message(&msg, &mut session, None, None).await {
-                        Ok(mut reply) => {
+                    let process_result =
+                        AssertUnwindSafe(agent.process_message(&msg, &mut session, None, None))
+                            .catch_unwind()
+                            .await;
+
+                    match process_result {
+                        Ok(Ok((mut reply, turn_usage))) => {
                             reply.text = censor_secrets(&reply.text);
                             cli_arc.send_message(reply).await.ok();
+
+                            // Record usage
+                            let record = skyclaw_core::UsageRecord {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                chat_id: msg.chat_id.clone(),
+                                session_id: "cli-cli".to_string(),
+                                timestamp: chrono::Utc::now(),
+                                api_calls: turn_usage.api_calls,
+                                input_tokens: turn_usage.input_tokens,
+                                output_tokens: turn_usage.output_tokens,
+                                tools_used: turn_usage.tools_used,
+                                total_cost_usd: turn_usage.total_cost_usd,
+                                provider: turn_usage.provider.clone(),
+                                model: turn_usage.model.clone(),
+                            };
+                            if let Err(e) = usage_store.record_usage(record).await {
+                                tracing::error!(error = %e, "Failed to record usage");
+                            }
+
+                            // Display usage summary if enabled
+                            if turn_usage.api_calls > 0 {
+                                if let Ok(enabled) =
+                                    usage_store.is_usage_display_enabled(&msg.chat_id).await
+                                {
+                                    if enabled {
+                                        println!("\n{}", turn_usage.format_summary());
+                                    }
+                                }
+                            }
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             eprintln!("  [error: {}]", e);
                             eprint!("skyclaw> ");
+                        }
+                        Err(panic_info) => {
+                            let panic_msg = if let Some(s) = panic_info.downcast_ref::<String>() {
+                                s.clone()
+                            } else if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                s.to_string()
+                            } else {
+                                "internal error".to_string()
+                            };
+                            eprintln!("  [panic recovered: {}]", panic_msg);
+                            tracing::error!(panic = %panic_msg, "PANIC RECOVERED in CLI processing");
+                            // Rollback session to pre-message state
+                            session.history = history.clone();
                         }
                     }
 
                     history = session.history;
+
+                    // ── Save CLI conversation history to memory backend ──
+                    if let Ok(json) = serde_json::to_string(&history) {
+                        let entry = skyclaw_core::MemoryEntry {
+                            id: cli_history_key.clone(),
+                            content: json,
+                            metadata: serde_json::json!({"chat_id": "cli"}),
+                            timestamp: chrono::Utc::now(),
+                            session_id: Some("cli".to_string()),
+                            entry_type: skyclaw_core::MemoryEntryType::Conversation,
+                        };
+                        if let Err(e) = memory.store(entry).await {
+                            tracing::warn!(error = %e, "Failed to persist CLI conversation history");
+                        }
+                    }
                 } else {
                     // Auto-generate fresh OTK for onboarding
                     let otk = setup_tokens.generate("cli").await;
