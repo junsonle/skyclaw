@@ -56,14 +56,15 @@ SkyClaw is built for hyper-performance. Rust's zero-cost abstractions, async run
 
 | Metric | SkyClaw (Rust) | OpenClaw (TypeScript) |
 |--------|---------------|----------------------|
-| **Idle RAM** | 14 MB | 800 MB – 3 GB |
+| **Idle RAM** | 14 MB | ~1.2 GB |
+| **Active RAM** | ~20 MB | 8 – 12 GB |
 | **Binary / Install** | 7.1 MB single binary | 75 MB+ (npm + node_modules) |
-| **Startup** | < 1 second | 5 – 15 minutes |
-| **Runtime** | Native arm64/x86_64 | Node.js + Electron + VS Code |
-| **Threads (idle)** | 13 | 50+ (Electron + Node workers) |
+| **Startup** | < 1 second | ~10 seconds (Node.js cold start) |
+| **Long session (13h)** | Stable ~20 MB | 1.9 GB (memory accumulation) |
+| **Runtime** | Native arm64/x86_64 | Node.js |
 | **Dependencies** | 0 runtime deps (static binary) | npm ecosystem |
 
-50-200x lower memory. Instant startup. Single binary deployment. No runtime dependencies.
+85x lower idle memory. Single binary deployment. No runtime dependencies.
 
 ## 3-Step Setup
 
