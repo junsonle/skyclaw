@@ -17,7 +17,7 @@
 
 # SkyClaw
 
-Hyper-performance (Rust) & self-sustaining claw that lives indefinitely in Cloud. 42K lines, 1061 tests, zero warnings.
+Hyper-performance (Rust) & self-learning claw that lives indefinitely in Cloud. Learns from every task, remembers across sessions. 42K lines, 1061 tests, zero warnings.
 
 ## What It Does
 
