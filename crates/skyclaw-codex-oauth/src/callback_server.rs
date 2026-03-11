@@ -31,6 +31,7 @@ pub struct CallbackResult {
 pub async fn wait_for_callback(
     expected_state: &str,
     timeout_secs: u64,
+    port: Option<u16>,
 ) -> Result<(CallbackResult, u16), SkyclawError> {
     let (tx, rx) = oneshot::channel::<Result<CallbackResult, SkyclawError>>();
     let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
@@ -86,8 +87,11 @@ pub async fn wait_for_callback(
         }),
     );
 
-    // Find an available port starting from 1455 (same as OpenClaw)
-    let port = find_available_port()?;
+    // Use the provided port (from login_browser) or find one
+    let port = match port {
+        Some(p) => p,
+        None => find_available_port()?,
+    };
     let addr = format!("127.0.0.1:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

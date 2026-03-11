@@ -959,35 +959,30 @@ fn list_configured_providers() -> String {
         lines.push("  openai-codex — model: gpt-5.4, OAuth (active)".to_string());
     }
 
-    match load_credentials_file() {
-        Some(creds) => {
-            if !creds.providers.is_empty() {
-                if !has_providers {
-                    lines.push("Configured providers:".to_string());
-                }
-                has_providers = true;
-                for p in &creds.providers {
-                    let key_count = p.keys.iter().filter(|k| !is_placeholder_key(k)).count();
-                    let active = if p.name == creds.active && !cfg!(feature = "codex-oauth") {
-                        " (active)"
-                    } else if p.name == creds.active {
-                        ""
-                    } else {
-                        ""
-                    };
-                    let proxy = if let Some(ref url) = p.base_url {
-                        format!(" via {}", url)
-                    } else {
-                        String::new()
-                    };
-                    lines.push(format!(
-                        "  {} — model: {}, {} key(s){}{}",
-                        p.name, p.model, key_count, proxy, active
-                    ));
-                }
+    if let Some(creds) = load_credentials_file() {
+        if !creds.providers.is_empty() {
+            if !has_providers {
+                lines.push("Configured providers:".to_string());
+            }
+            has_providers = true;
+            for p in &creds.providers {
+                let key_count = p.keys.iter().filter(|k| !is_placeholder_key(k)).count();
+                let active = if p.name == creds.active && !has_providers {
+                    " (active)"
+                } else {
+                    ""
+                };
+                let proxy = if let Some(ref url) = p.base_url {
+                    format!(" via {}", url)
+                } else {
+                    String::new()
+                };
+                lines.push(format!(
+                    "  {} — model: {}, {} key(s){}{}",
+                    p.name, p.model, key_count, proxy, active
+                ));
             }
         }
-        None => {}
     }
 
     if !has_providers {

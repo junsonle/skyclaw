@@ -74,8 +74,8 @@ async fn login_browser(
         println!("Open this URL manually:\n\n{}\n", auth_url);
     }
 
-    // Wait for callback
-    let (result, _port) = callback_server::wait_for_callback(state, LOGIN_TIMEOUT_SECS).await?;
+    // Wait for callback on the same port we told OpenAI about
+    let (result, _port) = callback_server::wait_for_callback(state, LOGIN_TIMEOUT_SECS, Some(port)).await?;
 
     // Exchange code for tokens
     exchange_code(&result.code, &pkce.verifier, &redirect_uri).await
