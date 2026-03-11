@@ -868,6 +868,11 @@ impl AgentRuntime {
         self.provider.as_ref()
     }
 
+    /// Get the provider as an Arc (for rebuilding agents with the same provider).
+    pub fn provider_arc(&self) -> Arc<dyn Provider> {
+        self.provider.clone()
+    }
+
     /// Get a reference to the memory backend.
     pub fn memory(&self) -> &dyn Memory {
         self.memory.as_ref()

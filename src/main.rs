@@ -740,6 +740,39 @@ A secondary output filter censors any key that leaks, but you must not rely on i
 The primary defense is YOU never including secrets in your output.",
     );
 
+    // ── MCP self-extension ────────────────────────────────────
+    #[cfg(feature = "mcp")]
+    prompt.push_str(
+        "\n\n\
+MCP (MODEL CONTEXT PROTOCOL) — SELF-EXTENSION:\n\
+You can extend your own capabilities at runtime by connecting MCP servers. \
+MCP servers are external processes that provide additional tools via the \
+Model Context Protocol. You have THREE tools for this:\n\n\
+1. self_extend_tool — DISCOVER: search for MCP servers by capability. \
+   Call with a query like 'browse websites' or 'query database' and get \
+   matching servers with install commands.\n\
+2. self_add_mcp — INSTALL: install a discovered MCP server. Its tools \
+   become available to you immediately, no restart needed.\n\
+3. mcp_manage — MANAGE: list/remove/restart installed MCP servers.\n\n\
+SELF-EXTENSION WORKFLOW:\n\
+When you need a capability you don't have:\n\
+1. Tell the user: 'I don't have X built-in, but I can install an MCP server for it.'\n\
+2. Call self_extend_tool with what you need → get candidates.\n\
+3. Pick the best match → call self_add_mcp to install it.\n\
+4. Use the new tools to complete the user's task.\n\n\
+WHEN TO SELF-EXTEND:\n\
+- User asks for something beyond your built-in tools (e.g., 'search the web', \
+  'query my database', 'generate an image').\n\
+- User explicitly asks to connect an MCP server.\n\
+- A task would clearly benefit from a specialized tool.\n\n\
+SAFETY RULES:\n\
+- ALWAYS tell the user what you're installing and why BEFORE calling self_add_mcp.\n\
+- If an MCP server needs env vars (API keys), ask the user to set them first.\n\
+- If install fails, tell the user and suggest alternatives or manual setup.\n\
+- Keep server names short: 'playwright', 'postgres', 'github'.\n\
+- Use mcp_manage(action='list') to check what's already connected.",
+    );
+
     prompt
 }
 
@@ -1375,7 +1408,7 @@ async fn main() -> Result<()> {
             let censored_channel: Option<Arc<dyn Channel>> = primary_channel
                 .clone()
                 .map(|ch| Arc::new(SecretCensorChannel { inner: ch }) as Arc<dyn Channel>);
-            let tools = skyclaw_tools::create_tools(
+            let mut tools = skyclaw_tools::create_tools(
                 &config.tools,
                 censored_channel,
                 Some(pending_messages.clone()),
@@ -1384,6 +1417,24 @@ async fn main() -> Result<()> {
                 Some(usage_store.clone()),
             );
             tracing::info!(count = tools.len(), "Tools initialized");
+
+            // ── MCP servers (external tool sources) ──────────
+            #[cfg(feature = "mcp")]
+            let mcp_manager: Arc<skyclaw_mcp::McpManager> = {
+                let mgr = Arc::new(skyclaw_mcp::McpManager::new());
+                mgr.connect_all().await;
+                let tool_names: Vec<String> = tools.iter().map(|t| t.name().to_string()).collect();
+                let mcp_tools = mgr.bridge_tools(&tool_names).await;
+                if !mcp_tools.is_empty() {
+                    tracing::info!(count = mcp_tools.len(), "MCP bridge tools loaded");
+                    tools.extend(mcp_tools);
+                }
+                // Add MCP agent tools: manage, self-extend (discover), self-add (install)
+                tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(mgr.clone())));
+                tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mgr.clone())));
+                mgr
+            };
 
             let system_prompt = Some(build_system_prompt());
 
@@ -1505,6 +1556,8 @@ async fn main() -> Result<()> {
                 let agent_state_clone = agent_state.clone();
                 let memory_clone = memory.clone();
                 let tools_clone = tools.clone();
+                #[cfg(feature = "mcp")]
+                let mcp_manager_clone = mcp_manager.clone();
                 let agent_max_turns = config.agent.max_turns;
                 let agent_max_context_tokens = config.agent.max_context_tokens;
                 let agent_max_tool_rounds = config.agent.max_tool_rounds;
@@ -1589,6 +1642,8 @@ async fn main() -> Result<()> {
                             let agent_state = agent_state_clone.clone();
                             let memory = memory_clone.clone();
                             let tools_template = tools_clone.clone();
+                            #[cfg(feature = "mcp")]
+                            let mcp_mgr = mcp_manager_clone.clone();
                             let max_turns = agent_max_turns;
                             let max_ctx = agent_max_context_tokens;
                             let max_rounds = agent_max_tool_rounds;
@@ -1872,11 +1927,183 @@ Available commands:\n\n\
 /model <name> — Switch to a different model\n\
 /removekey <provider> — Remove a provider's API key\n\
 /usage — Show token usage and cost summary\n\
+/mcp — List connected MCP servers and tools\n\
+/mcp add <name> <command-or-url> — Connect a new MCP server\n\
+/mcp remove <name> — Disconnect an MCP server\n\
+/mcp restart <name> — Restart an MCP server\n\
 /restart — Restart SkyClaw (server mode only)\n\n\
 Just type a message to chat with the AI agent.";
                                         let reply = skyclaw_core::types::message::OutboundMessage {
                                             chat_id: msg.chat_id.clone(),
                                             text: help_text.to_string(),
+                                            reply_to: Some(msg.id.clone()),
+                                            parse_mode: None,
+                                        };
+                                        send_with_retry(&*sender, reply).await;
+                                        is_heartbeat_clone.store(false, Ordering::Relaxed);
+                                        return;
+                                    }
+
+                                    // /mcp — manage MCP servers
+                                    #[cfg(feature = "mcp")]
+                                    if cmd_lower == "/mcp" || cmd_lower.starts_with("/mcp ") || cmd_lower.starts_with("/mcp@") {
+                                        // Extract args: strip "/mcp" and optional "@botname" suffix
+                                        let mcp_args = {
+                                            let raw = msg_text_cmd.trim();
+                                            let after_cmd = if raw.len() > 4 {
+                                                &raw[4..] // skip "/mcp"
+                                            } else {
+                                                ""
+                                            };
+                                            // Strip @botname if present (e.g., "/mcp@my_bot add ...")
+                                            let after_bot = if let Some(space_pos) = after_cmd.find(' ') {
+                                                if after_cmd.starts_with('@') {
+                                                    &after_cmd[space_pos..]
+                                                } else {
+                                                    after_cmd
+                                                }
+                                            } else if after_cmd.starts_with('@') {
+                                                "" // just "/mcp@botname" with no args
+                                            } else {
+                                                after_cmd
+                                            };
+                                            after_bot.trim()
+                                        };
+                                        let mcp_args_lower = mcp_args.to_lowercase();
+                                        tracing::debug!(mcp_args = %mcp_args, "Parsing /mcp command");
+
+                                        let mcp_reply = if mcp_args.is_empty() || mcp_args_lower == "list" {
+                                            mcp_mgr.list_servers().await
+                                        } else if mcp_args_lower.starts_with("add ") {
+                                            let add_rest = mcp_args["add ".len()..].trim();
+                                            let parts: Vec<&str> = add_rest.splitn(2, ' ').collect();
+                                            if parts.len() < 2 || parts[1].trim().is_empty() {
+                                                "Usage: /mcp add <name> <command-or-url>\n\n\
+                                                 Examples:\n\
+                                                 • /mcp add playwright npx @playwright/mcp@latest\n\
+                                                 • /mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /path\n\
+                                                 • /mcp add myapi https://mcp.example.com/sse\n\n\
+                                                 Note: The command must be an MCP server (not a GitHub URL).\n\
+                                                 For Playwright: npx @playwright/mcp@latest\n\
+                                                 For other servers: check the package's README for the MCP command.".to_string()
+                                            } else {
+                                                let name = parts[0];
+                                                let target = parts[1].trim();
+
+                                                // Warn if target looks like a GitHub repo URL (not an MCP endpoint)
+                                                if target.contains("github.com/") && !target.contains("/sse") && !target.contains("/mcp") {
+                                                    format!(
+                                                        "That looks like a GitHub repository URL, not an MCP server endpoint.\n\n\
+                                                         To use an MCP server, you need the command to run it. For example:\n\
+                                                         • /mcp add {} npx @playwright/mcp@latest\n\
+                                                         • /mcp add {} npx -y @modelcontextprotocol/server-filesystem /path\n\n\
+                                                         Check the repo's README for the correct MCP server command.",
+                                                        name, name
+                                                    )
+                                                } else {
+                                                    let config = if target.starts_with("http://") || target.starts_with("https://") {
+                                                        skyclaw_mcp::McpServerConfig::http(name, target)
+                                                    } else {
+                                                        let cmd_parts: Vec<&str> = target.split_whitespace().collect();
+                                                        let command = cmd_parts[0];
+                                                        let args: Vec<String> = cmd_parts[1..].iter().map(|s| s.to_string()).collect();
+                                                        skyclaw_mcp::McpServerConfig::stdio(name, command, args)
+                                                    };
+                                                    match mcp_mgr.add_server(config).await {
+                                                        Ok(count) => {
+                                                            if let Some(agent) = agent_state.read().await.as_ref() {
+                                                                let tool_names: Vec<String> = tools_template.iter().map(|t| t.name().to_string()).collect();
+                                                                let mut new_tools = tools_template.clone();
+                                                                let mcp_tools = mcp_mgr.bridge_tools(&tool_names).await;
+                                                                new_tools.extend(mcp_tools);
+                                                                new_tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(mcp_mgr.clone())));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mcp_mgr.clone())));
+                                                                let new_agent = Arc::new(skyclaw_agent::AgentRuntime::with_limits(
+                                                                    agent.provider_arc(),
+                                                                    memory.clone(),
+                                                                    new_tools,
+                                                                    agent.model().to_string(),
+                                                                    Some(build_system_prompt()),
+                                                                    max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
+                                                                ).with_v2_optimizations(v2_opt));
+                                                                *agent_state.write().await = Some(new_agent);
+                                                            }
+                                                            mcp_mgr.take_tools_changed();
+                                                            format!("MCP server '{}' connected with {} tools. New tools are now available.", name, count)
+                                                        }
+                                                        Err(e) => format!("Failed to add MCP server: {}", e),
+                                                    }
+                                                }
+                                            }
+                                        } else if mcp_args_lower.starts_with("remove ") {
+                                            let name = mcp_args["remove ".len()..].trim();
+                                            match mcp_mgr.remove_server(name).await {
+                                                Ok(()) => {
+                                                    if let Some(agent) = agent_state.read().await.as_ref() {
+                                                        let tool_names: Vec<String> = tools_template.iter().map(|t| t.name().to_string()).collect();
+                                                        let mut new_tools = tools_template.clone();
+                                                        let mcp_tools = mcp_mgr.bridge_tools(&tool_names).await;
+                                                        new_tools.extend(mcp_tools);
+                                                        new_tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(mcp_mgr.clone())));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mcp_mgr.clone())));
+                                                        let new_agent = Arc::new(skyclaw_agent::AgentRuntime::with_limits(
+                                                            agent.provider_arc(),
+                                                            memory.clone(),
+                                                            new_tools,
+                                                            agent.model().to_string(),
+                                                            Some(build_system_prompt()),
+                                                            max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
+                                                        ).with_v2_optimizations(v2_opt));
+                                                        *agent_state.write().await = Some(new_agent);
+                                                    }
+                                                    mcp_mgr.take_tools_changed();
+                                                    format!("MCP server '{}' removed.", name)
+                                                }
+                                                Err(e) => format!("Failed to remove MCP server: {}", e),
+                                            }
+                                        } else if mcp_args_lower.starts_with("restart ") {
+                                            let name = mcp_args["restart ".len()..].trim();
+                                            match mcp_mgr.restart_server(name).await {
+                                                Ok(count) => {
+                                                    if let Some(agent) = agent_state.read().await.as_ref() {
+                                                        let tool_names: Vec<String> = tools_template.iter().map(|t| t.name().to_string()).collect();
+                                                        let mut new_tools = tools_template.clone();
+                                                        let mcp_tools = mcp_mgr.bridge_tools(&tool_names).await;
+                                                        new_tools.extend(mcp_tools);
+                                                        new_tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(mcp_mgr.clone())));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                                                new_tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mcp_mgr.clone())));
+                                                        let new_agent = Arc::new(skyclaw_agent::AgentRuntime::with_limits(
+                                                            agent.provider_arc(),
+                                                            memory.clone(),
+                                                            new_tools,
+                                                            agent.model().to_string(),
+                                                            Some(build_system_prompt()),
+                                                            max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
+                                                        ).with_v2_optimizations(v2_opt));
+                                                        *agent_state.write().await = Some(new_agent);
+                                                    }
+                                                    mcp_mgr.take_tools_changed();
+                                                    format!("MCP server '{}' restarted with {} tools.", name, count)
+                                                }
+                                                Err(e) => format!("Failed to restart MCP server: {}", e),
+                                            }
+                                        } else {
+                                            "Usage: /mcp [list|add|remove|restart]\n\n\
+                                             /mcp — List all MCP servers\n\
+                                             /mcp add <name> <command> — Add a stdio MCP server\n\
+                                             /mcp add <name> <url> — Add an HTTP MCP server\n\
+                                             /mcp remove <name> — Remove a server\n\
+                                             /mcp restart <name> — Restart a server\n\n\
+                                             Examples:\n\
+                                             /mcp add playwright npx @playwright/mcp@latest\n\
+                                             /mcp add myapi https://mcp.example.com/sse".to_string()
+                                        };
+                                        let reply = skyclaw_core::types::message::OutboundMessage {
+                                            chat_id: msg.chat_id.clone(),
+                                            text: mcp_reply,
                                             reply_to: Some(msg.id.clone()),
                                             parse_mode: None,
                                         };
@@ -2376,6 +2603,29 @@ Just type a message to chat with the AI agent.";
                                                 }
                                             }
                                         }
+
+                                        // ── Hot-reload: check if MCP tools changed ────
+                                        #[cfg(feature = "mcp")]
+                                        if mcp_mgr.take_tools_changed() {
+                                            tracing::info!("MCP tools changed — rebuilding agent");
+                                            let tool_names: Vec<String> = tools_template.iter().map(|t| t.name().to_string()).collect();
+                                            let mut new_tools = tools_template.clone();
+                                            let mcp_tools = mcp_mgr.bridge_tools(&tool_names).await;
+                                            new_tools.extend(mcp_tools);
+                                            new_tools.push(std::sync::Arc::new(skyclaw_mcp::McpManageTool::new(mcp_mgr.clone())));
+                                            new_tools.push(std::sync::Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                            new_tools.push(std::sync::Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mcp_mgr.clone())));
+                                            let new_agent = Arc::new(skyclaw_agent::AgentRuntime::with_limits(
+                                                agent.provider_arc(),
+                                                memory.clone(),
+                                                new_tools,
+                                                agent.model().to_string(),
+                                                Some(build_system_prompt()),
+                                                max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
+                                            ).with_v2_optimizations(v2_opt));
+                                            *agent_state.write().await = Some(new_agent);
+                                            tracing::info!("Agent rebuilt with updated MCP tools");
+                                        }
                                     } else {
                                         // ── Onboarding / add-key mode: detect API key ────
                                         let msg_text = msg.text.as_deref().unwrap_or("");
@@ -2691,7 +2941,7 @@ Just type a message to chat with the AI agent.";
             let censored_cli: Arc<dyn Channel> = Arc::new(SecretCensorChannel {
                 inner: cli_arc.clone(),
             });
-            let tools_template = skyclaw_tools::create_tools(
+            let mut tools_template = skyclaw_tools::create_tools(
                 &config.tools,
                 Some(censored_cli),
                 Some(pending_messages.clone()),
@@ -2699,6 +2949,27 @@ Just type a message to chat with the AI agent.";
                 Some(Arc::new(setup_tokens.clone()) as Arc<dyn skyclaw_core::SetupLinkGenerator>),
                 Some(usage_store.clone()),
             );
+
+            // ── MCP servers (external tool sources) ──────────
+            #[cfg(feature = "mcp")]
+            let mcp_manager: Arc<skyclaw_mcp::McpManager> = {
+                let mgr = Arc::new(skyclaw_mcp::McpManager::new());
+                mgr.connect_all().await;
+                let tool_names: Vec<String> = tools_template
+                    .iter()
+                    .map(|t| t.name().to_string())
+                    .collect();
+                let mcp_tools = mgr.bridge_tools(&tool_names).await;
+                if !mcp_tools.is_empty() {
+                    tracing::info!(count = mcp_tools.len(), "MCP bridge tools loaded");
+                    tools_template.extend(mcp_tools);
+                }
+                tools_template.push(Arc::new(skyclaw_mcp::McpManageTool::new(mgr.clone())));
+                tools_template.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                tools_template.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(mgr.clone())));
+                mgr
+            };
+
             let base_url = config.provider.base_url.clone();
 
             // ── Build agent (if credentials available) ─────────
@@ -2887,9 +3158,213 @@ Just type a message to chat with the AI agent.";
                          /model <name> — Switch to a different model\n\
                          /removekey <provider> — Remove a provider's API key\n\
                          /usage — Show token usage and cost summary\n\
+                         /mcp — List connected MCP servers and tools\n\
+                         /mcp add <name> <command-or-url> — Connect a new MCP server\n\
+                         /mcp remove <name> — Disconnect an MCP server\n\
+                         /mcp restart <name> — Restart an MCP server\n\
                          /quit — Exit the CLI chat\n\n\
                          Just type a message to chat with the AI agent.\n"
                     );
+                    eprint!("skyclaw> ");
+                    continue;
+                }
+
+                // /mcp — manage MCP servers
+                #[cfg(feature = "mcp")]
+                if cmd_lower == "/mcp" || cmd_lower.starts_with("/mcp ") {
+                    let mcp_args = if cmd_lower == "/mcp" {
+                        ""
+                    } else {
+                        msg_text.trim()["/mcp".len()..].trim()
+                    };
+                    let mcp_args_lower = mcp_args.to_lowercase();
+                    if mcp_args.is_empty() || mcp_args_lower == "list" {
+                        println!("\n{}\n", mcp_manager.list_servers().await);
+                    } else if mcp_args_lower.starts_with("add ") {
+                        let add_rest = mcp_args["add ".len()..].trim();
+                        let parts: Vec<&str> = add_rest.splitn(2, ' ').collect();
+                        if parts.len() < 2 || parts[1].trim().is_empty() {
+                            println!(
+                                "\nUsage: /mcp add <name> <command-or-url>\n\n\
+                                 Examples:\n\
+                                 • /mcp add playwright npx @playwright/mcp@latest\n\
+                                 • /mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /path\n\
+                                 • /mcp add myapi https://mcp.example.com/sse\n"
+                            );
+                        } else {
+                            let name = parts[0];
+                            let target = parts[1].trim();
+
+                            // Warn if target looks like a GitHub repo URL
+                            if target.contains("github.com/")
+                                && !target.contains("/sse")
+                                && !target.contains("/mcp")
+                            {
+                                println!(
+                                    "\nThat looks like a GitHub repository URL, not an MCP server endpoint.\n\n\
+                                     To use an MCP server, you need the command to run it. For example:\n\
+                                     • /mcp add {} npx @playwright/mcp@latest\n\
+                                     • /mcp add {} npx -y @modelcontextprotocol/server-filesystem /path\n\n\
+                                     Check the repo's README for the correct MCP server command.\n",
+                                    name, name
+                                );
+                            } else {
+                                let config = if target.starts_with("http://")
+                                    || target.starts_with("https://")
+                                {
+                                    skyclaw_mcp::McpServerConfig::http(name, target)
+                                } else {
+                                    let cmd_parts: Vec<&str> = target.split_whitespace().collect();
+                                    let command = cmd_parts[0];
+                                    let args: Vec<String> =
+                                        cmd_parts[1..].iter().map(|s| s.to_string()).collect();
+                                    skyclaw_mcp::McpServerConfig::stdio(name, command, args)
+                                };
+                                match mcp_manager.add_server(config).await {
+                                    Ok(count) => {
+                                        if let Some(ref mut agent) = agent_opt {
+                                            let tool_names: Vec<String> = tools_template
+                                                .iter()
+                                                .map(|t| t.name().to_string())
+                                                .collect();
+                                            let mut new_tools = tools_template.clone();
+                                            let mcp_tools =
+                                                mcp_manager.bridge_tools(&tool_names).await;
+                                            new_tools.extend(mcp_tools);
+                                            new_tools.push(Arc::new(
+                                                skyclaw_mcp::McpManageTool::new(
+                                                    mcp_manager.clone(),
+                                                ),
+                                            ));
+                                            new_tools
+                                                .push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                            new_tools.push(Arc::new(
+                                                skyclaw_mcp::SelfAddMcpTool::new(
+                                                    mcp_manager.clone(),
+                                                ),
+                                            ));
+                                            agent_opt = Some(
+                                                skyclaw_agent::AgentRuntime::with_limits(
+                                                    agent.provider_arc(),
+                                                    memory.clone(),
+                                                    new_tools,
+                                                    agent.model().to_string(),
+                                                    Some(build_system_prompt()),
+                                                    max_turns,
+                                                    max_ctx,
+                                                    max_rounds,
+                                                    max_task_duration,
+                                                    max_spend,
+                                                )
+                                                .with_v2_optimizations(v2_opt),
+                                            );
+                                        }
+                                        mcp_manager.take_tools_changed();
+                                        println!(
+                                            "\nMCP server '{}' connected with {} tools.\n",
+                                            name, count
+                                        );
+                                    }
+                                    Err(e) => println!("\nFailed to add MCP server: {}\n", e),
+                                }
+                            }
+                        }
+                    } else if mcp_args_lower.starts_with("remove ") {
+                        let name = mcp_args["remove ".len()..].trim();
+                        match mcp_manager.remove_server(name).await {
+                            Ok(()) => {
+                                if let Some(ref mut agent) = agent_opt {
+                                    let tool_names: Vec<String> = tools_template
+                                        .iter()
+                                        .map(|t| t.name().to_string())
+                                        .collect();
+                                    let mut new_tools = tools_template.clone();
+                                    let mcp_tools = mcp_manager.bridge_tools(&tool_names).await;
+                                    new_tools.extend(mcp_tools);
+                                    new_tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(
+                                        mcp_manager.clone(),
+                                    )));
+                                    new_tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                    new_tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(
+                                        mcp_manager.clone(),
+                                    )));
+                                    agent_opt = Some(
+                                        skyclaw_agent::AgentRuntime::with_limits(
+                                            agent.provider_arc(),
+                                            memory.clone(),
+                                            new_tools,
+                                            agent.model().to_string(),
+                                            Some(build_system_prompt()),
+                                            max_turns,
+                                            max_ctx,
+                                            max_rounds,
+                                            max_task_duration,
+                                            max_spend,
+                                        )
+                                        .with_v2_optimizations(v2_opt),
+                                    );
+                                }
+                                mcp_manager.take_tools_changed();
+                                println!("\nMCP server '{}' removed.\n", name);
+                            }
+                            Err(e) => println!("\nFailed to remove MCP server: {}\n", e),
+                        }
+                    } else if mcp_args_lower.starts_with("restart ") {
+                        let name = mcp_args["restart ".len()..].trim();
+                        match mcp_manager.restart_server(name).await {
+                            Ok(count) => {
+                                if let Some(ref mut agent) = agent_opt {
+                                    let tool_names: Vec<String> = tools_template
+                                        .iter()
+                                        .map(|t| t.name().to_string())
+                                        .collect();
+                                    let mut new_tools = tools_template.clone();
+                                    let mcp_tools = mcp_manager.bridge_tools(&tool_names).await;
+                                    new_tools.extend(mcp_tools);
+                                    new_tools.push(Arc::new(skyclaw_mcp::McpManageTool::new(
+                                        mcp_manager.clone(),
+                                    )));
+                                    new_tools.push(Arc::new(skyclaw_mcp::SelfExtendTool::new()));
+                                    new_tools.push(Arc::new(skyclaw_mcp::SelfAddMcpTool::new(
+                                        mcp_manager.clone(),
+                                    )));
+                                    agent_opt = Some(
+                                        skyclaw_agent::AgentRuntime::with_limits(
+                                            agent.provider_arc(),
+                                            memory.clone(),
+                                            new_tools,
+                                            agent.model().to_string(),
+                                            Some(build_system_prompt()),
+                                            max_turns,
+                                            max_ctx,
+                                            max_rounds,
+                                            max_task_duration,
+                                            max_spend,
+                                        )
+                                        .with_v2_optimizations(v2_opt),
+                                    );
+                                }
+                                mcp_manager.take_tools_changed();
+                                println!(
+                                    "\nMCP server '{}' restarted with {} tools.\n",
+                                    name, count
+                                );
+                            }
+                            Err(e) => println!("\nFailed to restart MCP server: {}\n", e),
+                        }
+                    } else {
+                        println!(
+                            "\nUsage: /mcp [list|add|remove|restart]\n\n\
+                             /mcp — List all MCP servers\n\
+                             /mcp add <name> <command> — Add a stdio MCP server\n\
+                             /mcp add <name> <url> — Add an HTTP MCP server\n\
+                             /mcp remove <name> — Remove a server\n\
+                             /mcp restart <name> — Restart a server\n\n\
+                             Examples:\n\
+                             /mcp add playwright npx @playwright/mcp@latest\n\
+                             /mcp add myapi https://mcp.example.com/sse\n"
+                        );
+                    }
                     eprint!("skyclaw> ");
                     continue;
                 }

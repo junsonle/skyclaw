@@ -14,10 +14,11 @@ members = [
     "crates/skyclaw-observable",
     "crates/skyclaw-filestore",
     "crates/skyclaw-test-utils",
+    "crates/skyclaw-mcp",
 ]
 
 [workspace.package]
-version = "2.0.2"
+version = "2.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/nagisanzenin/skyclaw"
@@ -110,6 +111,7 @@ skyclaw-automation = { path = "crates/skyclaw-automation" }
 skyclaw-observable = { path = "crates/skyclaw-observable" }
 skyclaw-filestore = { path = "crates/skyclaw-filestore" }
 skyclaw-test-utils = { path = "crates/skyclaw-test-utils" }
+skyclaw-mcp = { path = "crates/skyclaw-mcp" }
 
 [package]
 name = "skyclaw"
@@ -136,6 +138,7 @@ skyclaw-skills.workspace = true
 skyclaw-automation.workspace = true
 skyclaw-observable.workspace = true
 skyclaw-filestore.workspace = true
+skyclaw-mcp = { workspace = true, optional = true }
 tokio.workspace = true
 clap.workspace = true
 dirs.workspace = true
@@ -155,12 +158,13 @@ chrono.workspace = true
 futures.workspace = true
 
 [features]
-default = ["telegram", "browser"]
+default = ["telegram", "browser", "mcp"]
 telegram = ["skyclaw-channels/telegram"]
 discord = ["skyclaw-channels/discord"]
 slack = ["skyclaw-channels/slack"]
 browser = ["skyclaw-tools/browser"]
 postgres = ["skyclaw-memory/postgres"]
+mcp = ["dep:skyclaw-mcp"]
 
 [profile.release]
 opt-level = "z"

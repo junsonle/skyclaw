@@ -4100,7 +4100,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -4120,6 +4120,7 @@ dependencies = [
  "skyclaw-core",
  "skyclaw-filestore",
  "skyclaw-gateway",
+ "skyclaw-mcp",
  "skyclaw-memory",
  "skyclaw-observable",
  "skyclaw-providers",
@@ -4135,7 +4136,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-agent"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -4156,7 +4157,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-automation"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "chrono",
  "skyclaw-core",
@@ -4167,7 +4168,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-channels"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4192,7 +4193,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-core"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4215,7 +4216,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-filestore"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -4233,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-gateway"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -4259,8 +4260,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "skyclaw-mcp"
+version = "2.1.0"
+dependencies = [
+ "async-trait",
+ "dirs",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "skyclaw-core",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "skyclaw-memory"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4278,7 +4295,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-observable"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "opentelemetry",
@@ -4292,7 +4309,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-providers"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -4307,7 +4324,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-skills"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "dirs",
  "serde",
@@ -4320,7 +4337,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-test-utils"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4335,7 +4352,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-tools"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4355,7 +4372,7 @@ dependencies = [
 
 [[package]]
 name = "skyclaw-vault"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "base64",

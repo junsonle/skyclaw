@@ -10,14 +10,14 @@
   <a href="https://github.com/nagisanzenin/skyclaw/stargazers"><img src="https://img.shields.io/github/stars/nagisanzenin/skyclaw?style=flat&color=gold&logo=github" alt="GitHub Stars"></a>
   <a href="https://discord.gg/3ux2c5xz"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-2.0.1-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/tests-1217-green.svg" alt="1217 tests">
+  <img src="https://img.shields.io/badge/version-2.1.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/tests-1266-green.svg" alt="1266 tests">
   <img src="https://img.shields.io/badge/providers-7-red.svg" alt="7 providers">
 </p>
 
 # SkyClaw
 
-Hyper-performance Rust agent runtime with extreme resilience and continuous self-learning. Deploys once, stays up forever. Learns from every task, remembers across sessions, self-heals through failures. **v2.0: LLM-powered chat/order classification — chat messages answered in 1 call, orders get instant acknowledgment while the pipeline works.** 46K lines, 1217 tests, zero warnings, zero panic paths.
+Hyper-performance Rust agent runtime with extreme resilience and continuous self-learning. Deploys once, stays up forever. Learns from every task, remembers across sessions, self-heals through failures. **v2.1: MCP self-extension — the agent discovers and installs new tools at runtime via Model Context Protocol.** 55K lines, 1266 tests, zero warnings, zero panic paths.
 
 ## What It Does
 
@@ -86,16 +86,17 @@ ORDER ─→ THINK ─→ ACTION ─→ VERIFY ─┐
 
 | Metric | Value |
 |--------|-------|
-| **Lines of Rust** | 46,827 across 104 source files |
-| **Tests** | 1,217 passing, 0 failures |
+| **Lines of Rust** | 55,354 across 118 source files |
+| **Tests** | 1,266 passing, 0 failures |
 | **Clippy warnings** | 0 (CI gate: `-D warnings`) |
-| **Workspace crates** | 13 + 1 binary |
+| **Workspace crates** | 14 + 1 binary |
 | **Implemented features** | 52 across 10 phases |
 | **AGENTIC CORE modules** | 20 + 5 v2 modules |
 | **Traits (core)** | 14 shared trait definitions |
 | **AI providers** | 7 (Anthropic, OpenAI, Gemini, Grok, OpenRouter, Z.ai, MiniMax) |
 | **Messaging channels** | 4 ([Telegram](docs/channels/telegram.md), [Discord](docs/channels/discord.md), [Slack](docs/channels/slack.md), [CLI](docs/channels/cli.md)) |
-| **Agent tools** | 9 (shell, browser, file ops, web fetch, git, messaging, file transfer, memory manage, key manage) |
+| **Agent tools** | 12 (shell, browser, file ops, web fetch, git, messaging, file transfer, memory manage, key manage, mcp_manage, self_extend_tool, self_add_mcp) |
+| **MCP support** | stdio + HTTP transports, 14 built-in server registry, hot-loading, auto-restart |
 | **Encryption** | ChaCha20-Poly1305 + Ed25519 + AES-256-GCM (OTK) |
 | **Memory backends** | 3 (SQLite, Markdown, failover) |
 | **File storage** | 2 (local, S3/R2) |
@@ -190,6 +191,75 @@ Paste any of these API keys in Telegram — SkyClaw detects the provider automat
 | **File transfer** | Send/receive files through messaging channels |
 | **Memory manage** | Persistent knowledge CRUD — remember, recall, forget, update, list |
 | **Key manage** | Generates secure setup links for API key onboarding — agent can send OTK links directly |
+| **MCP manage** | Add, remove, restart, and list MCP servers at runtime |
+| **Self-extend** | Discover MCP servers by capability — built-in registry of 14 servers with keyword search |
+| **Self-add MCP** | Install an MCP server to gain new tools — the agent extends its own capabilities on demand |
+
+## MCP — Self-Extending Tool System
+
+SkyClaw is an MCP (Model Context Protocol) client. It connects to external MCP servers, discovers their tools, and exposes them as native agent tools. The agent can extend its own capabilities at runtime — no restart, no config files.
+
+### How It Works
+
+```
+User: "Search the web for latest Rust news"
+         ↓
+Agent calls self_extend_tool(query="web search")
+         ↓
+Returns: brave-search, fetch (ranked by relevance)
+         ↓
+Agent: "I'll install the Fetch MCP server for web requests."
+         ↓
+Agent calls self_add_mcp(name="fetch", command="npx", args=["-y", "@modelcontextprotocol/server-fetch"])
+         ↓
+New HTTP tools available instantly
+         ↓
+Agent uses them to complete the task
+```
+
+### Built-in MCP Server Registry
+
+| Server | Capability | Command |
+|--------|-----------|---------|
+| Playwright | Browser automation | `npx @playwright/mcp@latest` |
+| Filesystem | Sandboxed file access | `npx -y @modelcontextprotocol/server-filesystem <path>` |
+| PostgreSQL | SQL database queries | `npx -y @modelcontextprotocol/server-postgres` |
+| SQLite | Local database | `npx -y @modelcontextprotocol/server-sqlite` |
+| GitHub | Repos, issues, PRs | `npx -y @modelcontextprotocol/server-github` |
+| Brave Search | Web search | `npx -y @modelcontextprotocol/server-brave-search` |
+| Puppeteer | Headless Chrome | `npx -y @modelcontextprotocol/server-puppeteer` |
+| Memory | Knowledge graph | `npx -y @modelcontextprotocol/server-memory` |
+| Fetch | HTTP requests | `npx -y @modelcontextprotocol/server-fetch` |
+| Slack | Team messaging | `npx -y @modelcontextprotocol/server-slack` |
+| Redis | Key-value cache | `npx -y @modelcontextprotocol/server-redis` |
+| Sequential Thinking | Structured reasoning | `npx -y @modelcontextprotocol/server-sequential-thinking` |
+| Google Maps | Geocoding, directions | `npx -y @modelcontextprotocol/server-google-maps` |
+| Everart | AI image generation | `npx -y @modelcontextprotocol/server-everart` |
+
+### Commands
+
+```
+/mcp                    List all connected MCP servers and their tools
+/mcp add <name> <cmd>   Add a stdio MCP server (e.g., /mcp add fetch npx -y @modelcontextprotocol/server-fetch)
+/mcp add <name> <url>   Add an HTTP MCP server
+/mcp remove <name>      Disconnect and remove a server
+/mcp restart <name>     Restart a crashed server
+```
+
+### Transports
+
+- **stdio** — launches a child process, communicates via stdin/stdout JSON-RPC
+- **HTTP** — connects to a remote MCP server via Streamable HTTP
+
+### Resilience
+
+- Timeouts on all JSON-RPC calls
+- Dead process detection with configurable auto-restart
+- Graceful degradation — MCP failure returns an error ToolOutput, never crashes the agent
+- Health monitoring with automatic reconnection
+- Tool name sanitization for cross-provider compatibility
+
+Config: `~/.skyclaw/mcp.toml`
 
 ## Vision Support
 
@@ -206,7 +276,7 @@ Supports Anthropic and OpenAI vision formats natively.
 
 ## Architecture
 
-13-crate Cargo workspace:
+14-crate Cargo workspace:
 
 ```
 skyclaw (binary)
@@ -218,6 +288,7 @@ skyclaw (binary)
 ├── skyclaw-memory       SQLite + Markdown with failover
 ├── skyclaw-vault        ChaCha20-Poly1305 encrypted secrets
 ├── skyclaw-tools        Shell, browser, file ops, web fetch, git
+├── skyclaw-mcp          MCP client — self-extending tool system
 ├── skyclaw-skills       Skill registry (SkyHub v1)
 ├── skyclaw-automation   Heartbeat, cron scheduler
 ├── skyclaw-observable   OpenTelemetry, 6 predefined metrics
@@ -271,7 +342,7 @@ Checks for new commits, pulls the latest code, and rebuilds the release binary i
 ```bash
 $ skyclaw update
 SkyClaw Update
-Current version: 2.0.1
+Current version: 2.1.0
 
 Fetching latest changes...
 3 new commit(s):
@@ -294,7 +365,7 @@ Handles dirty working trees automatically (stash → pull → build → pop). If
 ```bash
 cargo check --workspace                                    # Quick compilation check
 cargo build --workspace                                    # Debug build
-cargo test --workspace                                     # Run all 1217 tests
+cargo test --workspace                                     # Run all 1266 tests
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint (0 warnings)
 cargo fmt --all                                            # Format
 cargo build --release                                      # Release build
@@ -309,6 +380,8 @@ cargo build --release                                      # Release build
 ## Release Timeline
 
 ```
+2026-03-11  v2.1.0  ●━━━ MCP self-extension — Model Context Protocol client (skyclaw-mcp crate), self_extend_tool discovers servers by capability, self_add_mcp installs them at runtime, 14 built-in server registry, stdio + HTTP transports, hot-loading, auto-restart, tool name sanitization, /mcp commands, mcp_manage agent tool, 1266 tests
+                    │
 2026-03-11  v2.0.1  ●━━━ LLM chat/order classification — single LLM call classifies AND responds (chat = 1 call, order = instant ack + pipeline), abolished artificial tool iteration caps (budget + time are the guardrails), skyclaw update command, 1217 tests
                     │
 2026-03-10  v2.0.0  ●━━━ AGENTIC CORE V2 — smart complexity classification (Trivial/Simple/Standard/Complex), prompt stratification (4 tiers), complexity-aware tool loop, execution profiles, structured failure types, 12% cheaper on compound tasks, 14% fewer tool calls, zero quality regression. Benchmarked: 20-turn A/B on GPT-5.2, 100% classification accuracy, 100% reliability. 1141 tests
