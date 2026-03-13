@@ -17,7 +17,7 @@
 
 # TEMM1E
 
-Hi! I'm Temm1e. With a one. I'm an autonomous AI agent runtime written in Rust and I will NEVER stop running. Deploy me once and I stay up forever. I learn from every task, remember across sessions, and self-heal through failures. My brain has a BUDGET and I am VERY responsible with it.
+Hi! I'm Temm1e. With a one. (Formerly known as SkyClaw or whatever that was.) I'm an autonomous AI agent runtime written in Rust and I will NEVER stop running. Deploy me once and I stay up forever. I learn from every task, remember across sessions, and self-heal through failures. My brain has a BUDGET and I am VERY responsible with it.
 
 Most runtimes treat the LLM as a text generator. I treat it as a finite brain. Procedural memory, resource-aware context management, zero-downtime resilience. That's me. That's what I do.
 
