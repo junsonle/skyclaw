@@ -16,6 +16,7 @@ members = [
     "crates/temm1e-test-utils",
     "crates/temm1e-mcp",
     "crates/temm1e-codex-oauth",
+    "crates/temm1e-tui",
 ]
 
 [workspace.package]
@@ -115,6 +116,7 @@ temm1e-filestore = { path = "crates/temm1e-filestore" }
 temm1e-test-utils = { path = "crates/temm1e-test-utils" }
 temm1e-mcp = { path = "crates/temm1e-mcp" }
 temm1e-codex-oauth = { path = "crates/temm1e-codex-oauth" }
+temm1e-tui = { path = "crates/temm1e-tui" }
 
 [package]
 name = "temm1e"
@@ -143,6 +145,7 @@ temm1e-observable.workspace = true
 temm1e-filestore.workspace = true
 temm1e-mcp = { workspace = true, optional = true }
 temm1e-codex-oauth = { workspace = true, optional = true }
+temm1e-tui = { workspace = true, optional = true }
 tokio.workspace = true
 clap.workspace = true
 dirs.workspace = true
@@ -171,6 +174,7 @@ browser = ["temm1e-tools/browser"]
 postgres = ["temm1e-memory/postgres"]
 mcp = ["dep:temm1e-mcp"]
 codex-oauth = ["dep:temm1e-codex-oauth"]
+tui = ["dep:temm1e-tui"]
 
 [profile.release]
 opt-level = "z"

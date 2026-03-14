@@ -257,6 +257,75 @@ fn lookup(model: &str) -> Option<ModelLimits> {
     })
 }
 
+/// Default model for each provider.
+pub fn default_model(provider_name: &str) -> &'static str {
+    match provider_name {
+        "anthropic" => "claude-sonnet-4-6",
+        "openai" => "gpt-5.2",
+        "openai-codex" => "gpt-5.4",
+        "gemini" => "gemini-3-flash-preview",
+        "grok" | "xai" => "grok-4-1-fast-non-reasoning",
+        "openrouter" => "anthropic/claude-sonnet-4-6",
+        "minimax" => "MiniMax-M2.5",
+        "zai" => "glm-4.7-flash",
+        "ollama" => "llama3.3",
+        _ => "claude-sonnet-4-6",
+    }
+}
+
+/// Known models for each provider (used by /model listing and onboarding).
+pub fn available_models_for_provider(provider: &str) -> Vec<&'static str> {
+    match provider {
+        "anthropic" => vec!["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"],
+        "openai" => vec![
+            "gpt-5.2",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4o",
+            "o4-mini",
+            "o3-mini",
+            "gpt-3.5-turbo",
+        ],
+        "gemini" => vec![
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+        ],
+        "grok" | "xai" => vec!["grok-4-1-fast-non-reasoning", "grok-3"],
+        "openrouter" => vec![
+            "anthropic/claude-sonnet-4-6",
+            "openai/gpt-5.2",
+            "google/gemini-3-flash-preview",
+        ],
+        "zai" | "zhipu" => vec![
+            "glm-4.7-flash",
+            "glm-4.7",
+            "glm-5",
+            "glm-5-code",
+            "glm-4.6v",
+            "glm-4.6v-flash",
+        ],
+        "minimax" => vec!["MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
+        _ => vec![],
+    }
+}
+
+/// Quick vision check for model display.
+pub fn is_vision_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    if m.starts_with("glm-") {
+        return m.contains('v') && !m.starts_with("glm-5");
+    }
+    if m.starts_with("minimax") {
+        return false;
+    }
+    if m.starts_with("gpt-3") {
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

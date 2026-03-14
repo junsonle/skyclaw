@@ -916,14 +916,46 @@ async fn send_with_retry(
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .json()
-        .init();
+    // Initialize logging — TUI mode writes to a file instead of stderr
+    #[cfg(feature = "tui")]
+    let _is_tui = matches!(cli.command, Commands::Tui);
+    #[cfg(not(feature = "tui"))]
+    let _is_tui = false;
+
+    if _is_tui {
+        // TUI mode: write logs to ~/.temm1e/tui.log so they don't corrupt the display
+        let log_dir = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".temm1e");
+        std::fs::create_dir_all(&log_dir).ok();
+        if let Ok(log_file) = std::fs::File::create(log_dir.join("tui.log")) {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                )
+                .with_writer(std::sync::Mutex::new(log_file))
+                .with_ansi(false)
+                .json()
+                .init();
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .json()
+            .init();
+    }
+
+    // ── TUI fast path — skip all other init, go straight to TUI ──
+    #[cfg(feature = "tui")]
+    if _is_tui {
+        let config_path = cli.config.as_deref().map(std::path::Path::new);
+        let config = temm1e_core::config::load_config(config_path)?;
+        return temm1e_tui::launch_tui(config).await.map_err(Into::into);
+    }
 
     // Initialize health endpoint uptime clock
     temm1e_gateway::health::init_start_time();
@@ -1056,7 +1088,9 @@ async fn main() -> Result<()> {
     let config_path = cli.config.as_ref().map(std::path::Path::new);
     let mut config = temm1e_core::config::load_config(config_path)?;
 
-    tracing::info!(mode = %cli.mode, "TEMM1E starting");
+    if !_is_tui {
+        tracing::info!(mode = %cli.mode, "TEMM1E starting");
+    }
 
     match cli.command {
         Commands::Stop => {
@@ -1121,7 +1155,8 @@ async fn main() -> Result<()> {
                 _ => temm1e_core::types::config::Temm1eMode::Play,
             };
             // Lock mode when user explicitly chose work/pro — disables mode_switch tool
-            let personality_locked = !matches!(temm1e_mode, temm1e_core::types::config::Temm1eMode::Play);
+            let personality_locked =
+                !matches!(temm1e_mode, temm1e_core::types::config::Temm1eMode::Play);
             config.mode = temm1e_mode;
             tracing::info!(personality = %temm1e_mode, locked = personality_locked, "Temm1e personality mode");
 
@@ -1339,7 +1374,11 @@ async fn main() -> Result<()> {
                 Some(Arc::new(setup_tokens.clone()) as Arc<dyn temm1e_core::SetupLinkGenerator>),
                 Some(usage_store.clone()),
                 // Don't register mode_switch tool when personality is locked (work/pro)
-                if personality_locked { None } else { Some(shared_mode.clone()) },
+                if personality_locked {
+                    None
+                } else {
+                    Some(shared_mode.clone())
+                },
             );
             tracing::info!(count = tools.len(), "Tools initialized");
 
