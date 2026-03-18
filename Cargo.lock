@@ -5175,6 +5175,7 @@ dependencies = [
  "temm1e-test-utils",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -922,7 +922,7 @@ impl AgentRuntime {
                     ContentPart::Text { text } => {
                         text_parts.push(text.clone());
                     }
-                    ContentPart::ToolUse { id, name, input } => {
+                    ContentPart::ToolUse { id, name, input, .. } => {
                         tool_uses.push((id.clone(), name.clone(), input.clone()));
                     }
                     ContentPart::ToolResult { .. } | ContentPart::Image { .. } => {

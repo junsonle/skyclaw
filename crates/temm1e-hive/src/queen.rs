@@ -69,8 +69,8 @@ Output:"#
     /// Parse the yes/no response from the decomposition check.
     pub fn parse_should_decompose(response: &str) -> bool {
         let lower = response.trim().to_lowercase();
-        // Accept "yes" anywhere in a short response (handles "yes.", "Yes", "yes\n")
-        lower.len() < 10 && lower.contains("yes")
+        // Check if response starts with "yes" — handles "yes", "Yes.", "Yes, this can..."
+        lower.starts_with("yes")
     }
 
     /// Build the decomposition prompt for the LLM.

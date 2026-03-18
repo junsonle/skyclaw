@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn build_prompt_without_categories() {
         let prompt = build_classify_prompt(&[], Temm1eMode::Play);
-        assert!(prompt.contains("Classify the user's message"));
+        assert!(prompt.contains("message classifier"));
         assert!(!prompt.contains("blueprint_hint"));
     }
 

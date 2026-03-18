@@ -1080,6 +1080,7 @@ mod tests {
                     id: "t1".to_string(),
                     name: "shell".to_string(),
                     input: serde_json::json!({}),
+                    thought_signature: None,
                 }]),
             },
         ];
@@ -1107,6 +1108,7 @@ mod tests {
                 id: "t1".to_string(),
                 name: "shell".to_string(),
                 input: serde_json::json!({"command": "docker build ."}),
+                thought_signature: None,
             }]),
         };
         let m3 = ChatMessage {
@@ -1165,6 +1167,7 @@ mod tests {
                 id: "t1".to_string(),
                 name: "shell".to_string(),
                 input: serde_json::json!({"command": "ls"}),
+                thought_signature: None,
             }]),
         };
         let m3 = ChatMessage {
@@ -1250,6 +1253,7 @@ mod tests {
                     id: format!("t{i}"),
                     name: "shell".to_string(),
                     input: serde_json::json!({"command": format!("cmd {i}")}),
+                    thought_signature: None,
                 }]),
             });
             session.history.push(ChatMessage {
@@ -1300,6 +1304,7 @@ mod tests {
                 id: id.to_string(),
                 name: name.to_string(),
                 input: serde_json::json!({"cmd": "ls"}),
+                thought_signature: None,
             }]),
         }
     }
@@ -1340,6 +1345,7 @@ mod tests {
                     id: tool_id.to_string(),
                     name: tool_name.to_string(),
                     input: serde_json::json!({}),
+                    thought_signature: None,
                 },
             ]),
         }
@@ -1450,6 +1456,7 @@ mod tests {
                     id: "t1".to_string(),
                     name: "shell".to_string(),
                     input: serde_json::json!({}),
+                    thought_signature: None,
                 },
                 ContentPart::Image {
                     media_type: "image/png".to_string(),
