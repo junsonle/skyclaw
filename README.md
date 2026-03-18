@@ -43,41 +43,6 @@ My brain has a BUDGET and I am VERY responsible with it.
 
 ---
 
-## Interactive TUI
-
-`temm1e tui` gives you a Claude Code-level terminal experience — talk to Tem directly from your terminal with rich markdown rendering, syntax-highlighted code blocks, and real-time agent observability.
-
-```
-   +                  *          ╭─ python ─
-        /\_/\                    │ def hello():
-   *   ( o.o )   +               │     print("hOI!!")
-        > ^ <                    │
-       /|~~~|\                   │ if __name__ == "__main__":
-       ( ♥   )                   │     hello()
-   *    ~~   ~~                  ╰───
-
-     T E M M 1 E                tem> write me a hello world
-   your local AI agent          ◜ Thinking  2.1s
-```
-
-**Features:**
-- Arrow-key onboarding wizard (provider + model + personality mode)
-- Markdown rendering with **bold**, *italic*, `inline code`, and fenced code blocks
-- Syntax highlighting via syntect (Solarized Dark) with bordered code blocks
-- Animated thinking indicator showing agent phase (Classifying → Thinking → shell → Finishing)
-- 9 slash commands (`/help`, `/model`, `/clear`, `/config`, `/keys`, `/usage`, `/status`, `/compact`, `/quit`)
-- File drag-and-drop — drop a file path into the terminal to attach it
-- Path and URL highlighting (underlined, clickable)
-- Mouse wheel scrolling + PageUp/PageDown through full chat history
-- Personality modes: Auto (recommended), Play :3, Work >:3, Pro, None (minimal identity)
-- Ctrl+D to exit
-- Tem's 7-color palette with truecolor/256-color/NO_COLOR degradation
-- Token and cost tracking in the status bar
-
-> **Install globally:** `cp target/release/temm1e ~/.local/bin/temm1e` then run `temm1e tui` from anywhere.
-
----
-
 ## Tem's Mind — How I Think
 
 **Tem's Mind** is the cognitive engine at the core of TEMM1E. It's not a wrapper around an LLM — it's a full agent runtime that treats the LLM as a **finite brain** with a token budget, not an infinite text generator.
@@ -273,6 +238,41 @@ The quadratic context cost `h̄·m(m+1)/2` becomes linear `m·(S+R̄)` — each 
 Enabled by default in v3.0.0. Disable: `[pack] enabled = false`. Invisible for simple tasks.
 
 [Research paper →](docs/swarm/RESEARCH_PAPER.md) · [Full experiment report →](docs/swarm/experiment_artifacts/EXPERIMENT_REPORT.md) · [Design doc →](tems_lab/swarm/DESIGN.md)
+
+---
+
+## Interactive TUI
+
+`temm1e tui` gives you a Claude Code-level terminal experience — talk to Tem directly from your terminal with rich markdown rendering, syntax-highlighted code blocks, and real-time agent observability.
+
+```
+   +                  *          ╭─ python ─
+        /\_/\                    │ def hello():
+   *   ( o.o )   +               │     print("hOI!!")
+        > ^ <                    │
+       /|~~~|\                   │ if __name__ == "__main__":
+       ( ♥   )                   │     hello()
+   *    ~~   ~~                  ╰───
+
+     T E M M 1 E                tem> write me a hello world
+   your local AI agent          ◜ Thinking  2.1s
+```
+
+**Features:**
+- Arrow-key onboarding wizard (provider + model + personality mode)
+- Markdown rendering with **bold**, *italic*, `inline code`, and fenced code blocks
+- Syntax highlighting via syntect (Solarized Dark) with bordered code blocks
+- Animated thinking indicator showing agent phase (Classifying → Thinking → shell → Finishing)
+- 9 slash commands (`/help`, `/model`, `/clear`, `/config`, `/keys`, `/usage`, `/status`, `/compact`, `/quit`)
+- File drag-and-drop — drop a file path into the terminal to attach it
+- Path and URL highlighting (underlined, clickable)
+- Mouse wheel scrolling + PageUp/PageDown through full chat history
+- Personality modes: Auto (recommended), Play :3, Work >:3, Pro, None (minimal identity)
+- Ctrl+D to exit
+- Tem's 7-color palette with truecolor/256-color/NO_COLOR degradation
+- Token and cost tracking in the status bar
+
+> **Install globally:** `cp target/release/temm1e ~/.local/bin/temm1e` then run `temm1e tui` from anywhere.
 
 ---
 
