@@ -125,8 +125,9 @@ The base model made a fundamental arithmetic error. Ten training examples fixed 
 | [Implementation Plan](eigen/IMPLEMENTATION.md) | Phase-by-phase build guide — every struct, function, file, and test |
 | [Technical Reference](eigen/TECHNICAL_REFERENCE.md) | Ollama API endpoints, training scripts (Unsloth + MLX), embedding judge, two-tier behavior detection, ChatML format, codebase hook locations |
 | [Pipeline Proof Log](eigen/PIPELINE_PROOF_LOG.txt) | Unedited output: data → training → inference on Apple M2, 2026-03-18 |
+| [Setup Guide](eigen/SETUP.md) | User-facing: install Ollama + MLX/Unsloth, enable, choose model, troubleshooting |
 
-**Status:** Implemented and proven. Branch: `self-tuning`. 128 tests, real fine-tuning on M2.
+**Status:** Implemented and proven. 136 tests, real fine-tuning on M2.
 
 ---
 

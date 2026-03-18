@@ -223,17 +223,108 @@ impl EigenTuneEngine {
         })
     }
 
+    /// Check prerequisites and return status for each.
+    pub async fn check_prerequisites(&self) -> PrerequisiteStatus {
+        let ollama = backends::ollama::is_available().await;
+
+        let mlx = {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            {
+                std::process::Command::new("python3")
+                    .args(["-c", "import mlx_lm"])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+            #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+            {
+                false
+            }
+        };
+
+        let unsloth = std::process::Command::new("python3")
+            .args(["-c", "import unsloth"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        let python_version = std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+        let has_training_backend = mlx || unsloth;
+
+        PrerequisiteStatus {
+            ollama_running: ollama,
+            mlx_installed: mlx,
+            unsloth_installed: unsloth,
+            python_version,
+            has_training_backend,
+            can_collect: true, // Always — no prerequisites for collection
+            can_train: ollama && has_training_backend,
+            can_serve: ollama,
+        }
+    }
+
     /// Format status for chat display.
     pub async fn format_status(&self) -> String {
         match self.status().await {
             Ok(status) => {
                 let mut out = String::from("EIGEN-TUNE STATUS\n\n");
+
+                // Prerequisites
+                let prereqs = self.check_prerequisites().await;
+                out.push_str("Prerequisites:\n");
+
+                let ollama_icon = if prereqs.ollama_running { "✓" } else { "✗" };
+                let ollama_hint = if prereqs.ollama_running {
+                    "running".to_string()
+                } else {
+                    "not running → brew install ollama && ollama serve".to_string()
+                };
+                out.push_str(&format!("  {} Ollama: {}\n", ollama_icon, ollama_hint));
+
+                if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                    let mlx_icon = if prereqs.mlx_installed { "✓" } else { "✗" };
+                    let mlx_hint = if prereqs.mlx_installed {
+                        "installed".to_string()
+                    } else {
+                        "not found → pip install mlx-lm".to_string()
+                    };
+                    out.push_str(&format!("  {} MLX: {}\n", mlx_icon, mlx_hint));
+                } else {
+                    let us_icon = if prereqs.unsloth_installed { "✓" } else { "✗" };
+                    let us_hint = if prereqs.unsloth_installed {
+                        "installed".to_string()
+                    } else {
+                        "not found → pip install unsloth".to_string()
+                    };
+                    out.push_str(&format!("  {} Unsloth: {}\n", us_icon, us_hint));
+                }
+
+                if let Some(ref py) = prereqs.python_version {
+                    out.push_str(&format!("  ✓ {}\n", py));
+                }
+                out.push('\n');
+
+                // Model
+                let model_display = if self.config.base_model == "auto" {
+                    "auto (system picks for your hardware)".to_string()
+                } else {
+                    self.config.base_model.clone()
+                };
+                out.push_str(&format!("Model: {}\n", model_display));
+
+                // Data
                 out.push_str(&format!(
                     "Data: {} pairs collected | {} high-quality\n",
                     status.total_pairs, status.high_quality_pairs
                 ));
                 out.push_str(&format!("Diversity: J = {:.2}\n\n", status.diversity_j));
 
+                // Tiers
                 for t in &status.tiers {
                     let icon = match t.state {
                         types::TierState::Graduated => "●",
@@ -247,6 +338,12 @@ impl EigenTuneEngine {
                         t.state.as_str()
                     ));
                 }
+
+                // Setup hint if prerequisites missing
+                if !prereqs.can_train {
+                    out.push_str("\nSetup guide: /eigentune setup\n");
+                }
+
                 out
             }
             Err(e) => format!("Eigen-Tune: error: {}", e),
@@ -370,6 +467,19 @@ impl EigenTuneEngine {
 
         out
     }
+}
+
+/// Prerequisite check results.
+#[derive(Debug, Clone)]
+pub struct PrerequisiteStatus {
+    pub ollama_running: bool,
+    pub mlx_installed: bool,
+    pub unsloth_installed: bool,
+    pub python_version: Option<String>,
+    pub has_training_backend: bool,
+    pub can_collect: bool,
+    pub can_train: bool,
+    pub can_serve: bool,
 }
 
 /// Result of model discovery.
