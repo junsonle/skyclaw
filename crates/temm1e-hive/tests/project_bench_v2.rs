@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused)]
 //! Project Benchmark v2 (Difficulty: 8/10)
 //!
 //! Key differences from v1:

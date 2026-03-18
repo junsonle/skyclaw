@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused)]
 //! Project Benchmark — Python (Fair Test)
 //!
 //! Why Python: each file is independently syntax-checkable via `python -m py_compile`.

@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused)]
 //! Context Degradation Benchmark — The Honest Test
 //!
 //! Tests the core hypothesis: context accumulation degrades LLM output quality.

@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 /// and the agent runtime behaves identically to pre-Hive TEMM1E.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HiveConfig {
-    /// Master switch. Must be explicitly set to `true` to activate.
-    #[serde(default)]
+    /// Master switch. Enabled by default since v3.0.0.
+    #[serde(default = "default_enabled")]
     pub enabled: bool,
 
     /// Minimum workers to keep alive when swarm is active.
@@ -61,7 +61,7 @@ pub struct HiveConfig {
 impl Default for HiveConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             min_workers: default_min_workers(),
             max_workers: default_max_workers(),
             swarm_threshold_speedup: default_swarm_threshold_speedup(),
@@ -173,6 +173,9 @@ impl Default for BlockerConfig {
 // Default value functions
 // ---------------------------------------------------------------------------
 
+fn default_enabled() -> bool {
+    true
+}
 fn default_min_workers() -> usize {
     1
 }
@@ -234,16 +237,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_disabled() {
+    fn default_config_enabled() {
         let config = HiveConfig::default();
-        assert!(!config.enabled);
+        assert!(config.enabled);
     }
 
     #[test]
     fn serde_empty_toml() {
-        // An empty TOML string should parse to defaults
+        // An empty TOML string should parse to defaults (enabled by default)
         let config: HiveConfig = toml::from_str("").unwrap();
-        assert!(!config.enabled);
+        assert!(config.enabled);
         assert_eq!(config.max_workers, 3);
         assert!((config.swarm_threshold_speedup - 1.3).abs() < 1e-9);
     }

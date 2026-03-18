@@ -151,7 +151,7 @@ Respond with ONLY valid JSON (no markdown, no explanation):
             debug!(
                 s_max = s_max,
                 threshold = self.swarm_threshold_speedup,
-                "Speedup too low for swarm"
+                "Speedup too low for pack"
             );
             return false;
         }
@@ -172,7 +172,7 @@ Respond with ONLY valid JSON (no markdown, no explanation):
         info!(
             tasks = decomposition.tasks.len(),
             s_max = s_max,
-            "Swarm mode activated"
+            "Pack mode activated"
         );
         true
     }

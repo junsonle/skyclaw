@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused)]
 //! Live A/B Benchmark: Single Agent vs Hive Swarm
 //!
 //! Uses real Gemini 3.1 Flash Lite API calls to compare single-agent

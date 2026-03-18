@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use futures::stream::BoxStream;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 use temm1e_core::types::error::Temm1eError;
 use temm1e_core::types::message::{

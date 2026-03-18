@@ -1614,7 +1614,7 @@ async fn main() -> Result<()> {
                 );
             }
 
-            // ── Hive swarm initialization (if enabled) ────────
+            // ── Hive pack initialization (if enabled) ────────
             let hive_config: temm1e_hive::HiveConfig = {
                 // Parse [hive] section from the same config file.
                 // If absent or malformed, defaults to enabled=false (inert).
@@ -1649,12 +1649,12 @@ async fn main() -> Result<()> {
                         tracing::info!(
                             max_workers = hive_config.max_workers,
                             threshold = hive_config.swarm_threshold_speedup,
-                            "Hive swarm initialized"
+                            "Many Tems initialized (Swarm Intelligence)"
                         );
                         Some(Arc::new(h))
                     }
                     Err(e) => {
-                        tracing::warn!(error = %e, "Hive init failed — swarm disabled");
+                        tracing::warn!(error = %e, "Hive init failed — pack disabled");
                         None
                     }
                 }
@@ -2991,7 +2991,7 @@ Just type a message to chat with the AI agent.",
                                                 }
                                             }
                                             Ok(Err(temm1e_core::types::error::Temm1eError::HiveRoute(hive_msg))) => {
-                                                // ── Classifier said Order+Complex, hive enabled → swarm ──
+                                                // ── Classifier said Order+Complex, hive enabled → pack ──
                                                 if let Some(ref hive) = hive_worker {
                                                     if let Some(ref agent) = agent_state.read().await.as_ref().cloned() {
                                                         let provider = agent.provider_arc();
@@ -2999,12 +2999,12 @@ Just type a message to chat with the AI agent.",
                                                         let hive = Arc::clone(hive);
                                                         let chat_id = msg.chat_id.clone();
 
-                                                        tracing::info!(chat = %chat_id, "Hive: classifier routed Order+Complex to swarm");
+                                                        tracing::info!(chat = %chat_id, "Many Tems: classifier routed Order+Complex to pack");
 
-                                                        // Send immediate ack so the user knows swarm is working
+                                                        // Send immediate ack so the user knows pack is working
                                                         let ack = temm1e_core::types::message::OutboundMessage {
                                                             chat_id: msg.chat_id.clone(),
-                                                            text: "Decomposing into parallel tasks...".to_string(),
+                                                            text: "Alpha decomposing into pack tasks...".to_string(),
                                                             reply_to: Some(msg.id.clone()),
                                                             parse_mode: None,
                                                         };
@@ -3038,10 +3038,10 @@ Just type a message to chat with the AI agent.",
                                                         ).await;
 
                                                         if let Ok(Some(order_id)) = decompose_result {
-                                                            tracing::info!(order_id = %order_id, "Hive: executing swarm order");
+                                                            tracing::info!(order_id = %order_id, "Pack: executing order");
                                                             let swarm_ack = temm1e_core::types::message::OutboundMessage {
                                                                 chat_id: msg.chat_id.clone(),
-                                                                text: format!("Swarm activated — workers processing in parallel..."),
+                                                                text: "Pack activated — Tems working in parallel...".to_string(),
                                                                 reply_to: None,
                                                                 parse_mode: None,
                                                             };
@@ -3094,7 +3094,7 @@ Just type a message to chat with the AI agent.",
                                                             match swarm_result {
                                                                 Ok(result) => {
                                                                     let full_text = censor_secrets(&format!(
-                                                                        "{}\n\n---\nSwarm: {} tasks, {} workers, {}ms, {} tokens",
+                                                                        "{}\n\n---\nPack: {} tasks, {} Tems, {}ms, {} tokens",
                                                                         result.text, result.tasks_completed,
                                                                         result.workers_used, result.wall_clock_ms,
                                                                         result.total_tokens,
@@ -3145,7 +3145,7 @@ Just type a message to chat with the AI agent.",
                                                                     tracing::error!(error = %e, "Hive execution failed");
                                                                     let reply = temm1e_core::types::message::OutboundMessage {
                                                                         chat_id: msg.chat_id.clone(),
-                                                                        text: format!("Swarm execution failed: {e}"),
+                                                                        text: format!("Pack execution failed: {e}"),
                                                                         reply_to: Some(msg.id.clone()),
                                                                         parse_mode: None,
                                                                     };
@@ -3153,7 +3153,7 @@ Just type a message to chat with the AI agent.",
                                                                 }
                                                             }
                                                         } else {
-                                                            tracing::info!("Hive: decomposition failed or not worth it, no swarm");
+                                                            tracing::info!("Alpha: decomposition failed or not worth it, no pack");
                                                             let reply = temm1e_core::types::message::OutboundMessage {
                                                                 chat_id: msg.chat_id.clone(),
                                                                 text: "Task classified as complex but decomposition wasn't viable. Please try rephrasing or breaking it down.".into(),
@@ -4518,8 +4518,8 @@ Just type a message to chat with the AI agent.",
                             }
                         }
                         Ok(Err(temm1e_core::types::error::Temm1eError::HiveRoute(hive_msg))) => {
-                            // CLI swarm path — simplified version
-                            println!("  [Swarm mode: decomposing into parallel tasks...]");
+                            // CLI pack path — simplified version
+                            println!("  [Many Tems: Alpha decomposing into pack tasks...]");
                             // For CLI, fall back to single-agent since the hive
                             // infrastructure needs the full dispatcher (Start command).
                             // Re-process as a normal message without hive.

@@ -76,7 +76,7 @@ impl Hive {
         // Start pheromone GC
         pheromones.start_gc_loop(config.pheromone.gc_interval_secs);
 
-        info!("Hive initialized");
+        info!("Many Tems initialized");
         Ok(Self {
             blackboard,
             pheromones,
@@ -211,7 +211,7 @@ impl Hive {
             order_id = %order_id,
             tasks = decomposition.tasks.len(),
             queen_tokens = queen_tokens,
-            "Order created, swarm activating"
+            "Order created, pack activating"
         );
 
         Ok(Some(order_id))
@@ -272,7 +272,7 @@ impl Hive {
             order_id = order_id,
             workers = worker_count,
             tasks = order.task_count,
-            "Spawning parallel workers"
+            "Spawning pack — Tems working in parallel"
         );
 
         // Spawn N workers as real parallel tokio tasks.
@@ -363,7 +363,7 @@ impl Hive {
             tokens = result.total_tokens,
             wall_ms = result.wall_clock_ms,
             workers = result.workers_used,
-            "Order execution complete"
+            "Pack execution complete"
         );
 
         Ok(result)

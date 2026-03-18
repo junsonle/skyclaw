@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused)]
 //! Project Benchmark: Single Agent vs Swarm building a real Rust project
 //!
 //! Both modes build the same project: "taskforge" — a Rust library with
