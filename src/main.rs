@@ -1065,14 +1065,20 @@ async fn run_setup_wizard() -> Result<()> {
     stdin.lock().read_line(&mut input)?;
     let provider_choice = input.trim();
 
+    // Detect if user pasted an API key directly instead of choosing 1/2/3
+    let key_at_choice = if provider_choice.starts_with("sk-")
+        || provider_choice.starts_with("AIzaSy")
+        || provider_choice.starts_with("xai-")
+    {
+        Some(provider_choice.to_string())
+    } else {
+        None
+    };
+
     match provider_choice {
-        "1" | "api" | "" => {
-            println!();
-            print!("  Paste your API key: ");
-            io::stdout().flush()?;
-            input.clear();
-            stdin.lock().read_line(&mut input)?;
-            let key = input.trim().to_string();
+        _ if key_at_choice.is_some() => {
+            // User pasted API key directly at the choice prompt
+            let key = key_at_choice.unwrap();
             if !key.is_empty() {
                 // Auto-detect provider
                 let provider = if key.starts_with("sk-ant-") {
@@ -1098,6 +1104,35 @@ async fn run_setup_wizard() -> Result<()> {
                 println!("  Skipped — you can paste your API key in chat later.");
             }
         }
+        "1" | "api" | "" => {
+            println!();
+            print!("  Paste your API key: ");
+            io::stdout().flush()?;
+            input.clear();
+            stdin.lock().read_line(&mut input)?;
+            let key = input.trim().to_string();
+            if !key.is_empty() {
+                let provider = if key.starts_with("sk-ant-") {
+                    "anthropic"
+                } else if key.starts_with("AIzaSy") {
+                    "gemini"
+                } else if key.starts_with("xai-") {
+                    "grok"
+                } else if key.starts_with("sk-or-") {
+                    "openrouter"
+                } else {
+                    "openai"
+                };
+                println!("  Detected provider: {provider}");
+                let creds_path = temm1e_dir.join("credentials.toml");
+                let creds_content =
+                    format!("[providers.{}]\napi_key = \"{}\"\n", provider, key);
+                std::fs::write(&creds_path, creds_content)?;
+                println!("  Saved to ~/.temm1e/credentials.toml");
+            } else {
+                println!("  Skipped — you can paste your API key in chat later.");
+            }
+        }
         "2" | "oauth" | "chatgpt" => {
             println!();
             println!("  Run `temm1e auth login` to authenticate with ChatGPT.");
@@ -1108,7 +1143,8 @@ async fn run_setup_wizard() -> Result<()> {
     }
 
     // ── Step 3: Write config ────────────────────────────────────────
-    let config_path = temm1e_dir.join("temm1e.toml");
+    // Must match the config loader's search path: ~/.temm1e/config.toml
+    let config_path = temm1e_dir.join("config.toml");
     if !config_lines.is_empty() {
         // Build minimal config
         let mut full_config = String::new();
@@ -1119,7 +1155,7 @@ async fn run_setup_wizard() -> Result<()> {
 
         std::fs::write(&config_path, &full_config)?;
         println!();
-        println!("  Config written to ~/.temm1e/temm1e.toml");
+        println!("  Config written to ~/.temm1e/config.toml");
     }
 
     // ── Done ────────────────────────────────────────────────────────
