@@ -152,8 +152,22 @@ Research surveyed 20+ frameworks, 8 benchmarks, 15+ papers. Key finding: the ind
 | [Design Doc](gaze/DESIGN.md) | Formal spec: 7 system axioms, ScreenController trait, grounding pipeline with coordinate transform math, SoM overlay, config schema, risk assessment |
 | [Implementation Plan](gaze/IMPLEMENTATION.md) | Phase-by-phase: Prowl V2 (browser), Tem Gaze (desktop), validation benchmarks — every file, function, and test |
 | [Architecture Overview](../docs/design/TEM_GAZE_ARCHITECTURE.md) | Developer-facing: crate map, pipeline diagram, cost profile, platform support matrix |
+| [Experiment Report](gaze/EXPERIMENT_REPORT.md) | 7 live tests (4 browser + 3 desktop): SoM overlay on 650 elements, zoom_region 2x, desktop click opened Finder, full Spotlight→TextEdit→type proof |
+| [Phase 1 Report](gaze/PHASE1_REPORT.md) | Prowl V2 implementation details: 596 lines, 23 tests, compilation gates |
 
-**Status:** Research complete. Design complete. Implementation ready.
+### Benchmarked: 7 live tests on gemini-3-flash-preview, $0.069 total
+
+| Test | Type | Result |
+|------|------|--------|
+| SoM Observe (14 elements) | Browser | PASS — Tier 3, overlays match tree |
+| Zoom Region (2x) | Browser | PASS — 27 KB crop, vision injected |
+| Dense Page (650 elements) | Browser | PASS — zero crash, 178 KB screenshot |
+| Multi-step E2E | Browser | PASS — self-corrected after 94px miss |
+| Desktop Screenshot | Desktop | PASS — identified Arc, iTerm2, VS Code |
+| Desktop Click (Finder) | Desktop | PASS — Finder opened, verified |
+| Full Computer Use Proof | Desktop | PASS — Spotlight→TextEdit→typed message |
+
+**Status:** Implemented. Proven. 45 new tests, 19 crates. Browser + desktop computer use verified live.
 
 ---
 
@@ -161,9 +175,9 @@ Research surveyed 20+ frameworks, 8 benchmarks, 15+ papers. Key finding: the ind
 
 **Headless browsing for messaging-first agents.**
 
-See [TEM_PROWL_PAPER.md](TEM_PROWL_PAPER.md) and [prowl/](prowl/) for the full research, benchmarks, and implementation history. Prowl V2 (browser vision upgrade) is designed as part of the Tem Gaze initiative — SoM overlay generalization, zoom_region action, blueprint bypass, verify-retry loop.
+See [TEM_PROWL_PAPER.md](TEM_PROWL_PAPER.md) and [prowl/](prowl/) for the full research, benchmarks, and implementation history. Prowl V2 (browser vision upgrade) shipped as part of the Tem Gaze initiative — SoM overlay generalization, zoom_region action, blueprint bypass.
 
-**Status:** V1 shipped. V2 designed (part of Gaze).
+**Status:** V1 shipped. V2 shipped (Gaze Phase 1).
 
 ---
 
