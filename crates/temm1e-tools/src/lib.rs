@@ -13,6 +13,7 @@ pub mod credential_scrub;
 pub mod custom_tools;
 mod file;
 mod git;
+pub mod grounding;
 mod key_manage;
 mod lambda_recall;
 mod memory_manage;
