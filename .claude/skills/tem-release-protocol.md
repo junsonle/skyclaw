@@ -260,7 +260,52 @@ git push origin main
 git push origin main
 ```
 
-**After push:** Verify the CI passes on GitHub. If release CI exists, wait for it to complete and verify artifacts (per feedback_release_ci_wait memory).
+**After push:** Wait for CI to pass. Fix any failures before proceeding to Phase 11.
+
+---
+
+### Phase 11: Tag and Release
+
+**CRITICAL: GitHub Releases are triggered by git tags, NOT by commits.** Without a tag, no release binaries are built and `install.sh` users stay on the old version.
+
+The release workflow (`.github/workflows/release.yml`) triggers on `v*` tags:
+```yaml
+if: startsWith(github.ref, 'refs/tags/v')
+```
+
+**Only tag after CI is green:**
+```bash
+# 1. Verify CI passed
+gh run list --repo temm1e-labs/temm1e --limit 3
+
+# 2. Create annotated tag
+git tag -a vX.Y.Z -m "vX.Y.Z — one-line summary"
+
+# 3. Push the tag (this triggers the release workflow)
+git push origin vX.Y.Z
+
+# 4. Monitor the release workflow
+gh run list --repo temm1e-labs/temm1e --limit 5
+
+# 5. Verify the release was created with artifacts
+gh release view vX.Y.Z --repo temm1e-labs/temm1e
+```
+
+**What the tag triggers:**
+- Release CI builds binaries for: x86_64-linux-musl, x86_64-macos, aarch64-macos
+- Generates SHA256 checksums
+- Creates a GitHub Release with download artifacts
+- `install.sh` users will now get the new version
+
+**Never tag before CI is green.** A tag triggers the release build immediately. If it fails, you need to delete the tag, fix, and re-tag:
+```bash
+# Emergency: delete a bad tag
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+# Fix the issue, then re-tag
+```
+
+**After release:** Verify artifacts on https://github.com/temm1e-labs/temm1e/releases
 
 ---
 
@@ -291,7 +336,12 @@ git push origin main
 [ ] Final compilation gates re-passed
 [ ] Test count matches README
 [ ] Committed and pushed
-[ ] CI passes on GitHub
+[ ] CI passes on GitHub (all 3 workflows green)
+[ ] Git tag created: git tag -a vX.Y.Z -m "..."
+[ ] Tag pushed: git push origin vX.Y.Z
+[ ] Release workflow completed (builds binaries)
+[ ] GitHub Release page has download artifacts
+[ ] install.sh serves new version
 ```
 
 ---
@@ -317,6 +367,7 @@ git push origin main
 
 ## Version History of This Protocol
 
+- **v4 (v3.4.0, 2026-03-28):** Added Phase 11 "Tag and Release" — git tags trigger GitHub Releases. Without a tag, no binaries are built and install.sh stays on old version. Emergency tag deletion procedure included.
 - **v3 (v3.4.0, 2026-03-28):** Added Phase 6 "Distribution Parity" — install.sh must match cargo install. Three-way sync (Cargo.toml defaults, release.yml, Dockerfile FEATURES). Platform gap documentation for musl builds. Triggered by user question about install.sh missing desktop-control.
 - **v2 (v3.4.0 hotfix, 2026-03-28):** Added CI/CD section with system dependency management, common CI failure table, release.yml vs ci.yml feature scope distinction. Triggered by `wayland-sys` build failure in CI after desktop-control feature was added.
 - **v1 (v3.4.0, 2026-03-28):** Created from Tem Gaze release. Covers: compilation gates, version bump, README (badges, test counts, architecture tree, release timeline, feature instructions), CLAUDE.md, SETUP_FOR_PROS.md, getting-started.md, Dockerfile, CI, merge workflow. Derived from actual mistakes made during the release process.
