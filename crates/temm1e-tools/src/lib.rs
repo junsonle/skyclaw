@@ -11,6 +11,8 @@ pub mod browser_session;
 mod check_messages;
 pub mod credential_scrub;
 pub mod custom_tools;
+#[cfg(feature = "desktop-control")]
+pub mod desktop_tool;
 mod file;
 mod git;
 pub mod grounding;
