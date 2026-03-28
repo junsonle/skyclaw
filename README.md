@@ -288,6 +288,10 @@ The web is where humans live. Tem Prowl is a messaging-first web agent architect
 
 ### Tem Gaze — Full Computer Use (Desktop Vision Control)
 
+<p align="center">
+  <img src="assets/tem-gaze-overview.png" alt="Tem Gaze Architecture Overview" width="100%">
+</p>
+
 Tem can see and control your entire computer — not just the browser. Tem Gaze captures the screen, identifies UI elements via vision, and clicks, types, scrolls, and drags at the OS level. Works on any application: Finder, Terminal, VS Code, Settings, anything on screen.
 
 **How it works:**
