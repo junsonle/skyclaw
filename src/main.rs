@@ -1890,25 +1890,38 @@ async fn main() -> Result<()> {
                             Arc::from(temm1e_providers::create_provider(&provider_config)?)
                         }
                     };
-                    let agent = Arc::new(
-                        temm1e_agent::AgentRuntime::with_limits(
-                            provider.clone(),
-                            memory.clone(),
-                            tools.clone(),
-                            model.clone(),
-                            system_prompt.clone(),
-                            config.agent.max_turns,
-                            config.agent.max_context_tokens,
-                            config.agent.max_tool_rounds,
-                            config.agent.max_task_duration_secs,
-                            config.agent.max_spend_usd,
-                        )
-                        .with_v2_optimizations(config.agent.v2_optimizations)
-                        .with_parallel_phases(config.agent.parallel_phases)
-                        .with_hive_enabled(hive_enabled_early)
-                        .with_shared_mode(shared_mode.clone())
-                        .with_shared_memory_strategy(shared_memory_strategy.clone()),
-                    );
+                    let mut runtime = temm1e_agent::AgentRuntime::with_limits(
+                        provider.clone(),
+                        memory.clone(),
+                        tools.clone(),
+                        model.clone(),
+                        system_prompt.clone(),
+                        config.agent.max_turns,
+                        config.agent.max_context_tokens,
+                        config.agent.max_tool_rounds,
+                        config.agent.max_task_duration_secs,
+                        config.agent.max_spend_usd,
+                    )
+                    .with_v2_optimizations(config.agent.v2_optimizations)
+                    .with_parallel_phases(config.agent.parallel_phases)
+                    .with_hive_enabled(hive_enabled_early)
+                    .with_shared_mode(shared_mode.clone())
+                    .with_shared_memory_strategy(shared_memory_strategy.clone());
+                    // Tem Aware: enable consciousness if configured
+                    if config.awareness.enabled {
+                        let aware_config = temm1e_agent::awareness::AwarenessConfig {
+                            enabled: true,
+                            confidence_threshold: config.awareness.confidence_threshold,
+                            max_interventions_per_session: config
+                                .awareness
+                                .max_interventions_per_session,
+                            observation_mode: config.awareness.observation_mode.clone(),
+                        };
+                        runtime = runtime.with_awareness(
+                            temm1e_agent::awareness_engine::AwarenessEngine::new(aware_config),
+                        );
+                    }
+                    let agent = Arc::new(runtime);
                     *agent_state.write().await = Some(agent);
                     tracing::info!(provider = %pname, model = %model, "Agent initialized");
                 }
