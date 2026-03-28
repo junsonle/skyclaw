@@ -532,6 +532,25 @@ fn validate_sandbox(tool: &dyn Tool, session: &SessionContext) -> Result<(), Tem
 
         let path = std::path::Path::new(path_str);
 
+        // Skip home-relative paths (e.g., "~/.temm1e/sessions")
+        if path_str.starts_with("~/") || path_str == "~" {
+            continue;
+        }
+
+        // Reject paths containing ".." traversal components — catches
+        // attacks like "../../etc/shadow" without needing the target to
+        // exist on disk (which canonicalize() requires).
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(Temm1eError::SandboxViolation(format!(
+                "Tool '{}' declares access to '{}' which contains path traversal (..)",
+                tool.name(),
+                path_str,
+            )));
+        }
+
         // Resolve to absolute if relative
         let abs_path = if path.is_relative() {
             workspace.join(path)
