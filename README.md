@@ -233,7 +233,7 @@ The Alpha (coordinator) decomposes complex orders into a task DAG. Tems claim ta
 | Benchmark | Speedup | Token Cost | Quality |
 |-----------|:-------:|:----------:|:-------:|
 | [5 parallel subtasks](docs/swarm/experiment_artifacts/EXPERIMENT_REPORT.md) | **4.54x** | 1.01x (same) | Equal |
-| [12 independent functions](docs/swarm/experiment_artifacts/EXPERIMENT_REPORT.md) | **5.86x** | **0.30x (3.4x cheaper)** | Equal (12/12) |
+| [12 independent functions](docs/swarm/experiment_artifacts/EXPERIMENT_REPORT.md) | **5.86x** | **0.30x (3.4.1x cheaper)** | Equal (12/12) |
 | Simple tasks | 1.0x | 0% overhead | Correctly bypassed |
 
 The quadratic context cost `h̄·m(m+1)/2` becomes linear `m·(S+R̄)` — each Tem carries ~190 bytes of context instead of the single agent's growing 115→3,253 byte history.

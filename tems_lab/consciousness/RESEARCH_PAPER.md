@@ -374,9 +374,9 @@ Same model (Gemini Flash `gemini-3-flash-preview`), same prompts, same tasks. Ea
 
 - **V2 (first-attempt accuracy):** The conscious agent passed all 89 tests on its first run. The unconscious agent failed 5 tests (all `KeyError: 'click_count'` — a cross-module consistency issue where `list_urls()` didn't include the click count field). Consciousness appears to have helped the agent reason about cross-module dependencies before committing to code.
 
-- **V5 (cost efficiency, 5.1x):** Both agents built a complete programming language interpreter (lexer, parser, AST, interpreter, builtins, REPL — 1100+ lines) that passed all 17 verification programs. But the conscious agent cost $0.009 vs $0.046 — **5.1x cheaper.** The consciousness overhead was more than offset by more focused, efficient execution.
+- **V5 (cost efficiency, 5.1x):** Both agents built a complete programming language interpreter (lexer, parser, AST, interpreter, builtins, REPL — 1100+ lines) that passed all 17 verification programs. But the conscious agent cost $0.009 vs $0.046 — **4.9x cheaper.** The consciousness overhead was more than offset by more focused, efficient execution.
 
-- **V6 (cost efficiency, 4.2x):** Both agents completed a multi-tool research task (shell commands, browser navigation, file creation). Same quality output. Conscious: $0.006, unconscious: $0.025 — **4.2x cheaper.**
+- **V6 (cost efficiency, 4.2x):** Both agents completed a multi-tool research task (shell commands, browser navigation, file creation). Same quality output. Conscious: $0.006, unconscious: $0.025 — **4.1x cheaper.**
 
 **Where consciousness lost:**
 
