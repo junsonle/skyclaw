@@ -563,7 +563,19 @@ impl AgentRuntime {
                                     circuit_breaker_state: "active".to_string(),
                                     previous_notes: consciousness_observer.session_notes(),
                                 };
-                                consciousness_observer.post_observe(&obs).await;
+                                if let Some(cu) = consciousness_observer.post_observe(&obs).await {
+                                    turn_api_calls = turn_api_calls.saturating_add(1);
+                                    turn_input_tokens =
+                                        turn_input_tokens.saturating_add(cu.input_tokens);
+                                    turn_output_tokens =
+                                        turn_output_tokens.saturating_add(cu.output_tokens);
+                                    turn_cost_usd += cu.cost_usd;
+                                    self.budget.record_usage(
+                                        cu.input_tokens,
+                                        cu.output_tokens,
+                                        cu.cost_usd,
+                                    );
+                                }
                             }
 
                             return Ok((
@@ -851,7 +863,17 @@ impl AgentRuntime {
                     cumulative_cost_usd: self.budget.total_spend_usd(),
                     budget_limit_usd: self.budget.max_spend_usd(),
                 };
-                if let Some(injection) = consciousness_observer.pre_observe(&pre_obs).await {
+                let (injection, consciousness_usage) =
+                    consciousness_observer.pre_observe(&pre_obs).await;
+                if let Some(cu) = consciousness_usage {
+                    turn_api_calls = turn_api_calls.saturating_add(1);
+                    turn_input_tokens = turn_input_tokens.saturating_add(cu.input_tokens);
+                    turn_output_tokens = turn_output_tokens.saturating_add(cu.output_tokens);
+                    turn_cost_usd += cu.cost_usd;
+                    self.budget
+                        .record_usage(cu.input_tokens, cu.output_tokens, cu.cost_usd);
+                }
+                if let Some(injection) = injection {
                     let consciousness_block = format!(
                         "{{{{consciousness}}}}\n\
                          [Your consciousness — a separate observer watching this conversation — shares this insight:]\n\
@@ -1391,7 +1413,14 @@ impl AgentRuntime {
                         circuit_breaker_state: "active".to_string(),
                         previous_notes: consciousness_observer.session_notes(),
                     };
-                    consciousness_observer.post_observe(&obs).await;
+                    if let Some(cu) = consciousness_observer.post_observe(&obs).await {
+                        turn_api_calls = turn_api_calls.saturating_add(1);
+                        turn_input_tokens = turn_input_tokens.saturating_add(cu.input_tokens);
+                        turn_output_tokens = turn_output_tokens.saturating_add(cu.output_tokens);
+                        turn_cost_usd += cu.cost_usd;
+                        self.budget
+                            .record_usage(cu.input_tokens, cu.output_tokens, cu.cost_usd);
+                    }
                 }
 
                 // ── Status: Done ─────────────────────────────────
