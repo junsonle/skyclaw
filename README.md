@@ -438,6 +438,10 @@ That's it. Vigil handles everything else: log scanning, triage, credential scrub
 
 ### Tem Anima — Emotional Intelligence That Grows
 
+<p align="center">
+  <img src="assets/tem-anima-overview.png" alt="Tem Anima Overview" width="100%">
+</p>
+
 Most AI assistants are born fresh every conversation — no scars, no growth, no memory of who you are. Tem Anima changes that. It builds a psychological profile of each user over time and adapts communication style accordingly, while maintaining its own identity and values.
 
 **How it works:**
