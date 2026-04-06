@@ -249,17 +249,18 @@ fn format_capture_age(captured_at: &str) -> String {
     }
 }
 
-/// Get the user's role from the role file. Returns Admin if no file or on error.
-fn get_user_role(user_id: &str) -> temm1e_core::types::rbac::Role {
-    temm1e_core::types::rbac::load_role_file("telegram")
+/// Get the user's role from the role file for a specific channel.
+/// Returns Admin if no file, user not found, or on error (safe default).
+fn get_user_role(channel: &str, user_id: &str) -> temm1e_core::types::rbac::Role {
+    temm1e_core::types::rbac::load_role_file(channel)
         .and_then(|rf| rf.role_of(user_id))
         .unwrap_or(temm1e_core::types::rbac::Role::Admin)
 }
 
 /// Check if a slash command is allowed for the user's role.
 /// Returns true if allowed, false if blocked.
-fn is_command_allowed_for_user(user_id: &str, command: &str) -> bool {
-    let role = get_user_role(user_id);
+fn is_command_allowed_for_user(channel: &str, user_id: &str, command: &str) -> bool {
+    let role = get_user_role(channel, user_id);
     role.is_command_allowed(command)
 }
 
@@ -2661,6 +2662,29 @@ async fn main() -> Result<()> {
                                     let msg_text_cmd = msg.text.as_deref().unwrap_or("");
                                     let cmd_lower = msg_text_cmd.trim().to_lowercase();
 
+                                    // ── RBAC: centralized command gate ────────────
+                                    // Block admin-only slash commands for User role.
+                                    if cmd_lower.starts_with('/')
+                                        && !is_command_allowed_for_user(
+                                            &msg.channel,
+                                            &msg.user_id,
+                                            &cmd_lower,
+                                        )
+                                    {
+                                        let reply = temm1e_core::types::message::OutboundMessage {
+                                            chat_id: msg.chat_id.clone(),
+                                            text: "You don't have permission to use this command."
+                                                .to_string(),
+                                            reply_to: Some(msg.id.clone()),
+                                            parse_mode: None,
+                                        };
+                                        if let Err(e) = sender.send_message(reply).await {
+                                            tracing::error!(error = %e, "Failed to send permission denied reply");
+                                        }
+                                        is_heartbeat_clone.store(false, Ordering::Relaxed);
+                                        return;
+                                    }
+
                                     // /addkey — secure OTK flow
                                     if cmd_lower == "/addkey" {
                                         let otk = setup_tokens_worker.generate(&msg.chat_id).await;
@@ -3293,7 +3317,7 @@ Just type a message to chat with the AI agent.",
 
                                     // /reload — hot-reload config and rebuild agent (admin only)
                                     if cmd_lower == "/reload" {
-                                        if !is_command_allowed_for_user(&msg.user_id, &cmd_lower) {
+                                        if !is_command_allowed_for_user(&msg.channel, &msg.user_id, &cmd_lower) {
                                             let reply = temm1e_core::types::message::OutboundMessage {
                                                 chat_id: msg.chat_id.clone(),
                                                 text: "You don't have permission to use this command.".to_string(),
@@ -3649,7 +3673,7 @@ Just type a message to chat with the AI agent.",
 
                                     // /reset — factory reset from messaging (admin only)
                                     if cmd_lower == "/reset" {
-                                        if !is_command_allowed_for_user(&msg.user_id, &cmd_lower) {
+                                        if !is_command_allowed_for_user(&msg.channel, &msg.user_id, &cmd_lower) {
                                             let reply = temm1e_core::types::message::OutboundMessage {
                                                 chat_id: msg.chat_id.clone(),
                                                 text: "You don't have permission to use this command.".to_string(),
@@ -3722,7 +3746,7 @@ Just type a message to chat with the AI agent.",
 
                                     // /restart — restart the TEMM1E process, server mode (admin only)
                                     if cmd_lower == "/restart" {
-                                        if !is_command_allowed_for_user(&msg.user_id, &cmd_lower) {
+                                        if !is_command_allowed_for_user(&msg.channel, &msg.user_id, &cmd_lower) {
                                             let reply = temm1e_core::types::message::OutboundMessage {
                                                 chat_id: msg.chat_id.clone(),
                                                 text: "You don't have permission to use this command.".to_string(),
@@ -4089,12 +4113,17 @@ Just type a message to chat with the AI agent.",
                                             }
                                         }
 
+                                        // Resolve user role from channel's role file
+                                        let user_role = temm1e_core::types::rbac::load_role_file(&msg.channel)
+                                            .and_then(|rf| rf.role_of(&msg.user_id))
+                                            .unwrap_or(temm1e_core::types::rbac::Role::Admin);
+
                                         let mut session = temm1e_core::types::session::SessionContext {
                                             session_id: format!("{}-{}", msg.channel, msg.chat_id),
                                             user_id: msg.user_id.clone(),
                                             channel: msg.channel.clone(),
                                             chat_id: msg.chat_id.clone(),
-                                            role: temm1e_core::types::rbac::Role::Admin,
+                                            role: user_role,
                                             history: persistent_history.clone(),
                                             workspace_path: workspace_path.clone(),
                                         };
