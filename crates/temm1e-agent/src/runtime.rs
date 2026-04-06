@@ -978,6 +978,7 @@ impl AgentRuntime {
                 prompt_tier,
                 &matched_blueprints,
                 lambda_enabled,
+                self.personality.as_deref(),
             )
             .await;
 

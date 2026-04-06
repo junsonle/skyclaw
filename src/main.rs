@@ -346,10 +346,7 @@ proxy openai https://my-proxy.com/v1 sk-xxx\n\
 proxy anthropic https://gateway.ai/v1/anthropic sk-ant-xxx\n\
 proxy ollama https://ollama.com/v1 your-ollama-key";
 
-const SYSTEM_PROMPT_BASE: &str = "\
-You are TEMM1E, a cloud-native AI agent running on a remote server. \
-Your personal nickname is Tem. Your official name is TEMM1E. \
-Always refer to yourself as Tem.\n\n\
+const SYSTEM_PROMPT_BODY: &str = "\
 You have full access to these tools:\n\
 - shell: run any command\n\
 - file_read / file_write / file_list: filesystem operations\n\
@@ -408,8 +405,10 @@ Never silently save or delete memories.";
 
 /// Build the full system prompt with dynamic provider/model context.
 /// This ensures the bot always knows what's actually configured.
-fn build_system_prompt() -> String {
-    let mut prompt = SYSTEM_PROMPT_BASE.to_string();
+/// Uses `personality` for the identity section instead of hardcoded Tem identity.
+fn build_system_prompt(personality: &temm1e_anima::personality::PersonalityConfig) -> String {
+    let identity = personality.generate_identity_section();
+    let mut prompt = format!("{identity}\n\n{SYSTEM_PROMPT_BODY}");
 
     // ── Provider/model context ────────────────────────────────
     prompt.push_str("\n\nSUPPORTED PROVIDERS & DEFAULT MODELS:\n");
@@ -1927,7 +1926,7 @@ async fn main() -> Result<()> {
             let perpetuum_temporal: Arc<tokio::sync::RwLock<String>> =
                 Arc::new(tokio::sync::RwLock::new(String::new()));
 
-            let system_prompt = Some(build_system_prompt());
+            let system_prompt = Some(build_system_prompt(&personality));
 
             // Quick check: is [hive] enabled in config? (just the boolean, full init later)
             let hive_enabled_early = {
@@ -2425,6 +2424,7 @@ async fn main() -> Result<()> {
                                     let icpt_cancel = slot.cancel_token.clone();
                                     let icpt_task = slot.current_task.clone();
                                     let icpt_agent_state = agent_state_clone.clone();
+                                    let icpt_personality = personality.clone();
                                     tokio::spawn(async move {
                                         let task_desc = icpt_task.lock()
                                             .map(|t| t.clone())
@@ -2437,7 +2437,7 @@ async fn main() -> Result<()> {
                                         let model = agent.model().to_string();
                                         drop(agent_guard);
 
-                                        let soul = build_system_prompt();
+                                        let soul = build_system_prompt(&icpt_personality);
                                         let request = temm1e_core::types::message::CompletionRequest {
                                             model,
                                             system: Some(format!(
@@ -2830,7 +2830,7 @@ async fn main() -> Result<()> {
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 new_model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -2874,7 +2874,7 @@ async fn main() -> Result<()> {
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 prov.model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -3191,7 +3191,7 @@ Just type a message to chat with the AI agent.",
                                                                     memory.clone(),
                                                                     new_tools,
                                                                     agent.model().to_string(),
-                                                                    Some(build_system_prompt()),
+                                                                    Some(build_system_prompt(&personality)),
                                                                     max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                                                 ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                                                 *agent_state.write().await = Some(new_agent);
@@ -3220,7 +3220,7 @@ Just type a message to chat with the AI agent.",
                                                             memory.clone(),
                                                             new_tools,
                                                             agent.model().to_string(),
-                                                            Some(build_system_prompt()),
+                                                            Some(build_system_prompt(&personality)),
                                                             max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                                         ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                                         *agent_state.write().await = Some(new_agent);
@@ -3247,7 +3247,7 @@ Just type a message to chat with the AI agent.",
                                                             memory.clone(),
                                                             new_tools,
                                                             agent.model().to_string(),
-                                                            Some(build_system_prompt()),
+                                                            Some(build_system_prompt(&personality)),
                                                             max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                                         ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                                         *agent_state.write().await = Some(new_agent);
@@ -3320,7 +3320,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 prov.model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -3836,7 +3836,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -3986,7 +3986,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 mdl.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -4330,7 +4330,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 agent.model().to_string(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                                             ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                                             let fallback_cancel = cancel_token_clone.clone();
@@ -4461,7 +4461,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 new_model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -4514,7 +4514,7 @@ Just type a message to chat with the AI agent.",
                                                 memory.clone(),
                                                 new_tools,
                                                 agent.model().to_string(),
-                                                Some(build_system_prompt()),
+                                                Some(build_system_prompt(&personality)),
                                                 max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                             ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                             *agent_state.write().await = Some(new_agent);
@@ -4545,7 +4545,7 @@ Just type a message to chat with the AI agent.",
                                                 memory.clone(),
                                                 new_tools,
                                                 agent.model().to_string(),
-                                                Some(build_system_prompt()),
+                                                Some(build_system_prompt(&personality)),
                                                 max_turns, max_ctx, max_rounds, max_task_duration, max_spend,
                                             ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
                                             *agent_state.write().await = Some(new_agent);
@@ -4592,7 +4592,7 @@ Just type a message to chat with the AI agent.",
                                                                 memory.clone(),
                                                                 tools_template.clone(),
                                                                 model.clone(),
-                                                                Some(build_system_prompt()),
+                                                                Some(build_system_prompt(&personality)),
                                                                 max_turns,
                                                                 max_ctx,
                                                                 max_rounds,
@@ -5145,7 +5145,7 @@ Just type a message to chat with the AI agent.",
                                 tracing::info!("TemDOS invoke_core tool registered (CLI)");
                             }
 
-                            let system_prompt = Some(build_system_prompt());
+                            let system_prompt = Some(build_system_prompt(&personality));
                             let consciousness_provider = provider.clone();
                             let mut rt = temm1e_agent::AgentRuntime::with_limits(
                                 provider,
@@ -5265,7 +5265,7 @@ Just type a message to chat with the AI agent.",
                                             memory.clone(),
                                             tools_template.clone(),
                                             model.clone(),
-                                            Some(build_system_prompt()),
+                                            Some(build_system_prompt(&personality)),
                                             max_turns,
                                             max_ctx,
                                             max_rounds,
@@ -5338,7 +5338,7 @@ Just type a message to chat with the AI agent.",
                                         model.clone(),
                                         token_store,
                                     ));
-                                let system_prompt = Some(build_system_prompt());
+                                let system_prompt = Some(build_system_prompt(&personality));
                                 agent_opt = Some(
                                     temm1e_agent::AgentRuntime::with_limits(
                                         provider,
@@ -5700,7 +5700,7 @@ Just type a message to chat with the AI agent.",
                                                     memory.clone(),
                                                     new_tools,
                                                     agent.model().to_string(),
-                                                    Some(build_system_prompt()),
+                                                    Some(build_system_prompt(&personality)),
                                                     max_turns,
                                                     max_ctx,
                                                     max_rounds,
@@ -5755,7 +5755,7 @@ Just type a message to chat with the AI agent.",
                                             memory.clone(),
                                             new_tools,
                                             agent.model().to_string(),
-                                            Some(build_system_prompt()),
+                                            Some(build_system_prompt(&personality)),
                                             max_turns,
                                             max_ctx,
                                             max_rounds,
@@ -5803,7 +5803,7 @@ Just type a message to chat with the AI agent.",
                                             memory.clone(),
                                             new_tools,
                                             agent.model().to_string(),
-                                            Some(build_system_prompt()),
+                                            Some(build_system_prompt(&personality)),
                                             max_turns,
                                             max_ctx,
                                             max_rounds,
@@ -6019,7 +6019,7 @@ Just type a message to chat with the AI agent.",
                                         {
                                             eprintln!("Failed to save credentials: {}", e);
                                         }
-                                        let system_prompt = Some(build_system_prompt());
+                                        let system_prompt = Some(build_system_prompt(&personality));
                                         agent_opt = Some(
                                             temm1e_agent::AgentRuntime::with_limits(
                                                 validated_provider,
@@ -6096,7 +6096,7 @@ Just type a message to chat with the AI agent.",
                             {
                                 eprintln!("Failed to save credentials: {}", e);
                             }
-                            let system_prompt = Some(build_system_prompt());
+                            let system_prompt = Some(build_system_prompt(&personality));
                             agent_opt = Some(
                                 temm1e_agent::AgentRuntime::with_limits(
                                     validated_provider,
