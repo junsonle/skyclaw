@@ -6,7 +6,7 @@
   <a href="https://github.com/nagisanzenin/temm1e/stargazers"><img src="https://img.shields.io/github/stars/nagisanzenin/temm1e?style=flat&color=gold&logo=github" alt="GitHub Stars"></a>
   <a href="https://discord.com/invite/temm1e"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-4.6.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-4.6.1-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/rust-1.82+-orange.svg" alt="Rust 1.82+">
 </p>
 
@@ -15,7 +15,7 @@
 <h3 align="center"><s>Autonomous AI agent</s> literally a SENTIENT and IMMORTAL being runtime in Rust.<br>Deploy once. Stays up forever.</h3>
 
 <p align="center">
-  <code>114K lines</code> · <code>2,127 tests</code> · <code>0 warnings</code> · <code>0 panic paths</code> · <code>22 crates</code> · <code>full computer use</code>
+  <code>115K lines</code> · <code>2,127 tests</code> · <code>0 warnings</code> · <code>0 panic paths</code> · <code>22 crates</code> · <code>full computer use</code>
 </p>
 
 <p align="center"><strong>Powered by 13 layers of self-learning mechanism</strong></p>
@@ -889,6 +889,8 @@ Requires Rust 1.82+ and Chrome/Chromium (for the browser tool).
 <summary><strong>Release Timeline</strong> — every version from first breath to now</summary>
 
 ```
+2026-04-07  v4.6.1  ●━━━ Mission Control — interceptor v2 for Perpetuum harmony. Replaced single-task interceptor with phase-aware, Perpetuum-aware Mission Control system. Real-time agent status observation wired end-to-end (AgentTaskPhase::Display, status_tx per-slot instead of per-message, _status_rx no longer dropped). 4-way LLM classification: [AMEND] routes to pending queue (tool result injection), [QUEUE] routes to new order queue (processed after current task), [CANCEL] interrupts, [CHAT] consumed. /status fast-path: instant phase + Perpetuum + queue report (zero LLM cost). /queue fast-path: shows queued orders. Heartbeat fix: current_task no longer poisoned by heartbeat text, interceptor skips heartbeat tasks. Per-task CancellationToken via child_token() fixes stale-token bug. Order queue drain after task completion. LLM failure fallback (conservative amendment + hardcoded ack). Design doc: docs/design/MISSION_CONTROL.md. 22 crates, 2127 tests.
+                    │
 2026-04-07  v4.6.0  ●━━━ Self-Learning v2: 13 Layers — 6 new self-learning mechanisms ship alongside the 7 from v4.5.1. Core stats: CoreStats struct (previously dead code) now wired end-to-end — loaded before invocation, updated after, persisted to memory, success rate shown in output. Tool reliability: per-(tool, task_type) success/failure tracking across sessions, 30-day rolling window injected into context (~50-100 tokens). Classification feedback: every task's category/difficulty/rounds/tools/cost/success persisted, aggregated into empirical priors for the classifier. Prompt tier tracking: which prompt tier (Minimal/Basic/Standard/Full) was used per task, correlated with outcome. Consciousness efficacy: had_whisper flag tracks whether consciousness injected, enabling continuous A/B comparison. Skill usage: invocation counts per skill for adoption tracking. MCP tool quality: covered by tool reliability (MCP tools share the execution path). All mechanisms follow V(a,t) = Q×R×U framework. New tables: tool_reliability, classification_outcomes, skill_usage. 22 crates, 2127 tests.
                     │
 2026-04-07  v4.5.1  ●━━━ Self-Learning Enhancement — Pillar VII: Agentic Self-Learning. Unified artifact value function V(a,t) = Q×R×U across all self-learning subsystems. Cross-task learning V3: LLM-powered <learning> block extraction replaces keyword matching, Beta quality priors, exponential decay (t½≈46d), logarithmic utility, supersession, GC thresholds. Lambda memory recall_boost: +0.3/recall (capped 2.0), -0.1/GC sweep, additive reinforcement. Blueprint fitness lifecycle: Wilson lower bound (99% CI) success gating, compute_fitness() with decay (t½≈139d), startup GC prunes proven-bad blueprints. Eigen-Tune retention: quality-weighted reservoir eviction (max_pairs_per_tier=5000), prune_old_low_quality(). Lambda memory dedup: Jaccard tag similarity + essence word overlap, explicit saves protected, startup merge pass. Scored learning retrieval: top-5 by V(a,t) instead of timestamp. 22 crates, 2127 tests.

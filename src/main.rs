@@ -2364,7 +2364,17 @@ async fn main() -> Result<()> {
 
             // ── Per-chat serial executor ───────────────────────
 
+            /// A user order queued for processing after the current task.
+            struct QueuedOrder {
+                original_msg: temm1e_core::types::message::InboundMessage,
+                #[allow(dead_code)]
+                queued_at: std::time::Instant,
+            }
+
+            type OrderQueue = Arc<std::sync::Mutex<std::collections::VecDeque<QueuedOrder>>>;
+
             /// Tracks the active task state for a single chat.
+            #[allow(dead_code)]
             struct ChatSlot {
                 tx: tokio::sync::mpsc::Sender<temm1e_core::types::message::InboundMessage>,
                 interrupt: Arc<AtomicBool>,
@@ -2372,6 +2382,10 @@ async fn main() -> Result<()> {
                 is_busy: Arc<AtomicBool>,
                 current_task: Arc<std::sync::Mutex<String>>,
                 cancel_token: tokio_util::sync::CancellationToken,
+                // ── Mission Control ──
+                status_tx: tokio::sync::watch::Sender<temm1e_agent::AgentTaskStatus>,
+                order_queue: OrderQueue,
+                active_cancel: Arc<std::sync::Mutex<tokio_util::sync::CancellationToken>>,
             }
 
             if !channel_map.is_empty() {
@@ -2429,7 +2443,7 @@ async fn main() -> Result<()> {
                                         "User message preempting active heartbeat task"
                                     );
                                     slot.interrupt.store(true, Ordering::Relaxed);
-                                    slot.cancel_token.cancel();
+                                    if let Ok(ct) = slot.active_cancel.lock() { ct.cancel(); }
                                 }
 
                                 // /stop is the only hardcoded instant-kill.
@@ -2445,44 +2459,149 @@ async fn main() -> Result<()> {
                                         "/stop command — interrupting active task"
                                     );
                                     slot.interrupt.store(true, Ordering::Relaxed);
-                                    slot.cancel_token.cancel();
+                                    if let Ok(ct) = slot.active_cancel.lock() { ct.cancel(); }
                                     continue;
                                 }
 
-                                // Only intercept when worker is actively processing.
-                                // When idle (waiting on chat_rx), let the message
-                                // fall through to the worker channel.
-                                if slot.is_busy.load(Ordering::Relaxed) {
-                                    // Push to pending queue ONLY when busy — the runtime
-                                    // injects these into tool results so the working LLM
-                                    // sees them. If not busy, the message goes directly
-                                    // to the worker channel below.
-                                    if let Some(text) = inbound.text.as_deref() {
-                                        if let Ok(mut pq) = pending_clone.lock() {
-                                            pq.entry(chat_id.clone())
-                                                .or_default()
-                                                .push(text.to_string());
-                                        }
+                                // ── Fast-path: /status (no LLM call) ──────
+                                let is_slash_status = inbound.text.as_deref()
+                                    .map(|t| t.trim().eq_ignore_ascii_case("/status"))
+                                    .unwrap_or(false);
+
+                                if is_slash_status {
+                                    let status_snap = slot.status_tx.borrow().clone();
+                                    let is_busy_now = slot.is_busy.load(Ordering::Relaxed);
+                                    let is_hb_now = slot.is_heartbeat.load(Ordering::Relaxed);
+                                    let oq_len = slot.order_queue.lock()
+                                        .map(|q| q.len()).unwrap_or(0);
+                                    let task_desc = slot.current_task.lock()
+                                        .map(|t| t.clone()).unwrap_or_default();
+
+                                    let mut status_text = if !is_busy_now {
+                                        "Idle — no active task.".to_string()
+                                    } else if is_hb_now {
+                                        "Running background heartbeat check.".to_string()
+                                    } else {
+                                        let elapsed = status_snap.started_at.elapsed().as_secs();
+                                        format!(
+                                            "Active task: {}\nRequest: \"{}\"\nRounds: {} | Tools: {} | {}s elapsed | ${:.4}",
+                                            status_snap.phase, task_desc,
+                                            status_snap.rounds_completed, status_snap.tools_executed,
+                                            elapsed, status_snap.cost_usd
+                                        )
+                                    };
+
+                                    let temporal = perpetuum_temporal.read().await;
+                                    if !temporal.is_empty() {
+                                        status_text.push_str(&format!("\n\nBackground:\n{}", &*temporal));
                                     }
-                                    // LLM interceptor — runs on a separate task.
-                                    // Can chat, give status, or cancel the active task.
+
+                                    if oq_len > 0 {
+                                        status_text.push_str(&format!("\n\nQueued orders: {}", oq_len));
+                                    }
+
                                     let icpt_sender = channel_map_arc
                                         .get(&inbound.channel)
                                         .cloned()
                                         .or_else(|| primary_fallback.clone())
-                                        .expect("channel_map is non-empty, checked at gate");
+                                        .expect("channel_map non-empty");
+                                    let reply = temm1e_core::types::message::OutboundMessage {
+                                        chat_id: chat_id.clone(),
+                                        text: status_text,
+                                        reply_to: Some(inbound.id.clone()),
+                                        parse_mode: None,
+                                    };
+                                    let _ = icpt_sender.send_message(reply).await;
+                                    continue;
+                                }
+
+                                // ── Fast-path: /queue (no LLM call) ──────
+                                let is_slash_queue = inbound.text.as_deref()
+                                    .map(|t| t.trim().eq_ignore_ascii_case("/queue"))
+                                    .unwrap_or(false);
+
+                                if is_slash_queue {
+                                    let status_text = if let Ok(oq) = slot.order_queue.lock() {
+                                        if oq.is_empty() {
+                                            "No queued orders.".to_string()
+                                        } else {
+                                            let mut lines = format!("Queued orders ({}):\n", oq.len());
+                                            for (i, order) in oq.iter().enumerate() {
+                                                let text = order.original_msg.text.as_deref().unwrap_or("(no text)");
+                                                let ago = order.queued_at.elapsed().as_secs();
+                                                lines.push_str(&format!("  {}. \"{}\" ({}s ago)\n", i + 1, text, ago));
+                                            }
+                                            lines
+                                        }
+                                    } else {
+                                        "Could not read order queue.".to_string()
+                                    };
+
+                                    let icpt_sender = channel_map_arc
+                                        .get(&inbound.channel)
+                                        .cloned()
+                                        .or_else(|| primary_fallback.clone())
+                                        .expect("channel_map non-empty");
+                                    let reply = temm1e_core::types::message::OutboundMessage {
+                                        chat_id: chat_id.clone(),
+                                        text: status_text,
+                                        reply_to: Some(inbound.id.clone()),
+                                        parse_mode: None,
+                                    };
+                                    let _ = icpt_sender.send_message(reply).await;
+                                    continue;
+                                }
+
+                                // ── Mission Control: intercept when busy (skip heartbeats) ──
+                                // When idle (waiting on chat_rx), let the message
+                                // fall through to the worker channel.
+                                // Skip interceptor for heartbeat tasks — user message
+                                // preempts heartbeat (lines above), falls through naturally.
+                                if slot.is_busy.load(Ordering::Relaxed)
+                                    && !slot.is_heartbeat.load(Ordering::Relaxed)
+                                {
+                                    // DO NOT push to pending queue here — Mission Control
+                                    // classifies first, then routes to pending ([AMEND])
+                                    // or order queue ([QUEUE]).
+                                    let icpt_sender = channel_map_arc
+                                        .get(&inbound.channel)
+                                        .cloned()
+                                        .or_else(|| primary_fallback.clone())
+                                        .expect("channel_map non-empty");
                                     let icpt_chat_id = chat_id.clone();
                                     let icpt_msg_id = inbound.id.clone();
                                     let icpt_msg_text = inbound.text.clone().unwrap_or_default();
+                                    let icpt_inbound = inbound.clone();
                                     let icpt_interrupt = slot.interrupt.clone();
-                                    let icpt_cancel = slot.cancel_token.clone();
+                                    let icpt_active_cancel = slot.active_cancel.clone();
                                     let icpt_task = slot.current_task.clone();
+                                    let icpt_status_tx = slot.status_tx.clone();
+                                    let icpt_order_queue = slot.order_queue.clone();
+                                    let icpt_pending = pending_clone.clone();
+                                    let icpt_perpetuum_temporal = perpetuum_temporal.clone();
                                     let icpt_agent_state = agent_state_clone.clone();
                                     let icpt_personality = personality.clone();
                                     tokio::spawn(async move {
                                         let task_desc = icpt_task.lock()
                                             .map(|t| t.clone())
                                             .unwrap_or_default();
+
+                                        // Read real-time phase from status watch channel
+                                        let status_snap = icpt_status_tx.borrow().clone();
+                                        let elapsed = status_snap.started_at.elapsed().as_secs();
+                                        let phase_str = format!("{}", status_snap.phase);
+
+                                        // Read Perpetuum background context (cached, zero DB cost)
+                                        let perpetuum_ctx = icpt_perpetuum_temporal.read().await.clone();
+                                        let perpetuum_section = if perpetuum_ctx.is_empty() {
+                                            "None active".to_string()
+                                        } else {
+                                            perpetuum_ctx
+                                        };
+
+                                        // Read order queue count
+                                        let oq_count = icpt_order_queue.lock()
+                                            .map(|q| q.len()).unwrap_or(0);
 
                                         // Get provider + model from the active agent
                                         let agent_guard = icpt_agent_state.read().await;
@@ -2495,24 +2614,36 @@ async fn main() -> Result<()> {
                                         let request = temm1e_core::types::message::CompletionRequest {
                                             model,
                                             system: Some(format!(
-                                                "{}\n\n\
-                                                 === INTERCEPTOR MODE ===\n\
-                                                 You are running as Tem's INTERCEPTOR right now. Your main self is busy \
-                                                 working on a task. The user sent a message while that task is running.\n\n\
-                                                 Current task: \"{}\"\n\n\
-                                                 Interceptor rules:\n\
-                                                 - Keep it SHORT (1-3 sentences max)\n\
-                                                 - If the user wants to CANCEL/STOP the task, include the exact token [CANCEL] at the very end of your response\n\
-                                                 - If the user asks about progress, explain what the task involves based on its description\n\
-                                                 - If the user is chatting casually, respond warmly\n\
+                                                "{soul}\n\n\
+                                                 === MISSION CONTROL ===\n\
+                                                 You are Tem's MISSION CONTROL. Your main self is busy working.\n\n\
+                                                 FOREGROUND TASK:\n\
+                                                   Request: \"{task_desc}\"\n\
+                                                   Phase: {phase_str}\n\
+                                                   Elapsed: {elapsed}s | Rounds: {} | Tools run: {} | Cost: ${:.4}\n\n\
+                                                 BACKGROUND (Perpetuum):\n\
+                                                   {perpetuum_section}\n\n\
+                                                 QUEUED ORDERS: {oq_count}\n\n\
+                                                 The user says: \"{icpt_msg_text}\"\n\n\
+                                                 Classify and respond (1-3 sentences max). End with EXACTLY ONE token:\n\
+                                                 [AMEND] — user is correcting/adding to the CURRENT task\n\
+                                                 [QUEUE] — user wants something NEW done AFTER the current task\n\
+                                                 [CANCEL] — user wants to STOP the current task\n\
+                                                 [CHAT] — user is chatting or asking about status\n\n\
+                                                 Rules:\n\
+                                                 - For status questions: describe what you're doing using the phase info, then end with [CHAT]\n\
+                                                 - For [QUEUE]: confirm the order is queued\n\
+                                                 - For [AMEND]: acknowledge the update\n\
                                                  - NEVER use [CANCEL] unless the user clearly wants to stop\n\
-                                                 === END INTERCEPTOR ===",
-                                                soul, task_desc
+                                                 === END MISSION CONTROL ===",
+                                                status_snap.rounds_completed,
+                                                status_snap.tools_executed,
+                                                status_snap.cost_usd,
                                             )),
                                             messages: vec![
                                                 temm1e_core::types::message::ChatMessage {
                                                     role: temm1e_core::types::message::Role::User,
-                                                    content: temm1e_core::types::message::MessageContent::Text(icpt_msg_text),
+                                                    content: temm1e_core::types::message::MessageContent::Text(icpt_msg_text.clone()),
                                                 },
                                             ],
                                             tools: vec![],
@@ -2530,9 +2661,24 @@ async fn main() -> Result<()> {
                                                     .collect::<Vec<_>>()
                                                     .join("");
 
-                                                let should_cancel = text.contains("[CANCEL]");
-                                                text = text.replace("[CANCEL]", "").trim().to_string();
+                                                // Parse classification token
+                                                let classification = if text.contains("[CANCEL]") {
+                                                    "cancel"
+                                                } else if text.contains("[QUEUE]") {
+                                                    "queue"
+                                                } else if text.contains("[AMEND]") {
+                                                    "amend"
+                                                } else {
+                                                    "chat"
+                                                };
 
+                                                // Strip all tokens from response
+                                                for token in &["[CANCEL]", "[QUEUE]", "[AMEND]", "[CHAT]"] {
+                                                    text = text.replace(token, "");
+                                                }
+                                                text = text.trim().to_string();
+
+                                                // Send response to user
                                                 if !text.is_empty() {
                                                     let reply = temm1e_core::types::message::OutboundMessage {
                                                         chat_id: icpt_chat_id.clone(),
@@ -2543,20 +2689,65 @@ async fn main() -> Result<()> {
                                                     let _ = icpt_sender.send_message(reply).await;
                                                 }
 
-                                                if should_cancel {
-                                                    icpt_interrupt.store(true, Ordering::Relaxed);
-                                                    icpt_cancel.cancel();
-                                                    tracing::info!(
-                                                        chat_id = %icpt_chat_id,
-                                                        "Interceptor cancelled active task"
-                                                    );
+                                                // Route based on classification
+                                                match classification {
+                                                    "cancel" => {
+                                                        icpt_interrupt.store(true, Ordering::Relaxed);
+                                                        if let Ok(ct) = icpt_active_cancel.lock() {
+                                                            ct.cancel();
+                                                        }
+                                                        tracing::info!(
+                                                            chat_id = %icpt_chat_id,
+                                                            "Mission Control cancelled active task"
+                                                        );
+                                                    }
+                                                    "queue" => {
+                                                        if let Ok(mut oq) = icpt_order_queue.lock() {
+                                                            oq.push_back(QueuedOrder {
+                                                                original_msg: icpt_inbound,
+                                                                queued_at: std::time::Instant::now(),
+                                                            });
+                                                        }
+                                                        tracing::info!(
+                                                            chat_id = %icpt_chat_id,
+                                                            "Mission Control queued new order"
+                                                        );
+                                                    }
+                                                    "amend" => {
+                                                        if let Ok(mut pq) = icpt_pending.lock() {
+                                                            pq.entry(icpt_chat_id.clone())
+                                                                .or_default()
+                                                                .push(icpt_msg_text);
+                                                        }
+                                                        tracing::info!(
+                                                            chat_id = %icpt_chat_id,
+                                                            "Mission Control routed amendment to pending"
+                                                        );
+                                                    }
+                                                    _ => {
+                                                        // [CHAT] — message consumed by response
+                                                    }
                                                 }
                                             }
                                             Err(e) => {
                                                 tracing::warn!(
                                                     error = %e,
-                                                    "Interceptor LLM call failed — skipping"
+                                                    "Mission Control LLM call failed — fallback to pending"
                                                 );
+                                                // Conservative: treat as amendment
+                                                if let Ok(mut pq) = icpt_pending.lock() {
+                                                    pq.entry(icpt_chat_id.clone())
+                                                        .or_default()
+                                                        .push(icpt_msg_text);
+                                                }
+                                                // Send hardcoded ack
+                                                let ack = temm1e_core::types::message::OutboundMessage {
+                                                    chat_id: icpt_chat_id,
+                                                    text: "Got your message \u{2014} I'll look at it when I finish what I'm working on.".to_string(),
+                                                    reply_to: Some(icpt_msg_id),
+                                                    parse_mode: None,
+                                                };
+                                                let _ = icpt_sender.send_message(ack).await;
                                             }
                                         }
                                     });
@@ -2593,6 +2784,13 @@ async fn main() -> Result<()> {
                             let is_busy = Arc::new(AtomicBool::new(false));
                             let current_task: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
                             let cancel_token = tokio_util::sync::CancellationToken::new();
+                            // ── Mission Control state ──
+                            let (slot_status_tx, _) = tokio::sync::watch::channel(
+                                temm1e_agent::AgentTaskStatus::default(),
+                            );
+                            let order_queue: OrderQueue = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+                            let active_cancel: Arc<std::sync::Mutex<tokio_util::sync::CancellationToken>> =
+                                Arc::new(std::sync::Mutex::new(cancel_token.child_token()));
                             let is_busy_clone = is_busy.clone();
                             let current_task_clone = current_task.clone();
                             let self_tx = chat_tx.clone();
@@ -2618,6 +2816,9 @@ async fn main() -> Result<()> {
                             let interrupt_clone = interrupt.clone();
                             let is_heartbeat_clone = is_heartbeat.clone();
                             let cancel_token_clone = cancel_token.clone();
+                            let status_tx_clone = slot_status_tx.clone();
+                            let order_queue_worker = order_queue.clone();
+                            let active_cancel_clone = active_cancel.clone();
                             let pending_for_worker = pending_clone.clone();
                             let shared_mode = shared_mode_for_worker;
                             let shared_memory_strategy = shared_memory_strategy_for_worker;
@@ -2691,13 +2892,14 @@ async fn main() -> Result<()> {
 
                                     let interrupt_flag = Some(interrupt_clone.clone());
 
-                                    // ── Phase 1: status watch + cancel token ──────
-                                    // Watch channel created per-message; future phases
-                                    // will expose the receiver to observers.
-                                    let (status_tx, _status_rx) = tokio::sync::watch::channel(
-                                        temm1e_agent::AgentTaskStatus::default(),
-                                    );
-                                    let cancel = cancel_token_clone.clone();
+                                    // ── Mission Control: reset status + fresh cancel token ──
+                                    status_tx_clone.send_modify(|s| *s = temm1e_agent::AgentTaskStatus::default());
+                                    let status_tx = status_tx_clone.clone();
+                                    let task_cancel = cancel_token_clone.child_token();
+                                    if let Ok(mut ac) = active_cancel_clone.lock() {
+                                        *ac = task_cancel.clone();
+                                    }
+                                    let cancel = task_cancel;
 
                                     // ── Commands — intercepted before agent ──────
                                     let msg_text_cmd = msg.text.as_deref().unwrap_or("");
@@ -4187,8 +4389,12 @@ Just type a message to chat with the AI agent.",
                                         // Commands handled above use `continue` and never
                                         // reach here, so is_busy stays false for them.
                                         is_busy_clone.store(true, Ordering::Relaxed);
-                                        if let Ok(mut ct) = current_task_clone.lock() {
-                                            *ct = msg.text.as_deref().unwrap_or("").to_string();
+                                        // Only set current_task for user messages, not heartbeats.
+                                        // Heartbeat text would poison the Mission Control interceptor.
+                                        if !is_hb {
+                                            if let Ok(mut ct) = current_task_clone.lock() {
+                                                *ct = msg.text.as_deref().unwrap_or("").to_string();
+                                            }
                                         }
 
                                         // Wraps process_message in catch_unwind so a panic
@@ -4792,6 +4998,22 @@ Just type a message to chat with the AI agent.",
                                             }
                                         }
                                     }
+                                    // ── Mission Control: dispatch next queued order ──
+                                    if let Ok(mut oq) = order_queue_worker.lock() {
+                                        if let Some(next_order) = oq.pop_front() {
+                                            tracing::info!(
+                                                chat_id = %worker_chat_id,
+                                                remaining = oq.len(),
+                                                "Dispatching next queued order"
+                                            );
+                                            if self_tx.try_send(next_order.original_msg).is_err() {
+                                                tracing::warn!(
+                                                    chat_id = %worker_chat_id,
+                                                    "Failed to dispatch queued order — channel full"
+                                                );
+                                            }
+                                        }
+                                    }
                                     is_heartbeat_clone.store(false, Ordering::Relaxed);
                                     is_busy_clone.store(false, Ordering::Relaxed);
                                     interrupt_clone.store(false, Ordering::Relaxed);
@@ -4837,7 +5059,7 @@ Just type a message to chat with the AI agent.",
                                 }
                             });
 
-                            ChatSlot { tx: chat_tx, interrupt, is_heartbeat, is_busy, current_task, cancel_token }
+                            ChatSlot { tx: chat_tx, interrupt, is_heartbeat, is_busy, current_task, cancel_token, status_tx: slot_status_tx, order_queue, active_cancel }
                         });
 
                         // Send message into the chat's dedicated queue.

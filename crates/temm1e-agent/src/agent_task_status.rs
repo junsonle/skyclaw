@@ -71,6 +71,29 @@ impl Default for AgentTaskStatus {
     }
 }
 
+impl std::fmt::Display for AgentTaskPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Preparing => write!(f, "Preparing"),
+            Self::Classifying => write!(f, "Classifying request"),
+            Self::CallingProvider { round } => write!(f, "Thinking (round {round})"),
+            Self::ExecutingTool {
+                round,
+                tool_name,
+                tool_index,
+                tool_total,
+            } => write!(
+                f,
+                "Running {tool_name} ({}/{tool_total}, round {round})",
+                tool_index + 1
+            ),
+            Self::Finishing => write!(f, "Finishing up"),
+            Self::Done => write!(f, "Done"),
+            Self::Interrupted { round } => write!(f, "Interrupted at round {round}"),
+        }
+    }
+}
+
 impl AgentTaskStatus {
     /// Create a new status with the current timestamp.
     pub fn new() -> Self {
