@@ -24,6 +24,7 @@ members = [
     "crates/temm1e-perpetuum",
     "crates/temm1e-anima",
     "crates/temm1e-cores",
+    "crates/temm1e-self-grow",
 ]
 
 [workspace.package]
