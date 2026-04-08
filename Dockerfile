@@ -88,4 +88,8 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
 # Default command: start the gateway. Override with "chat" or "tui" for
 # interactive modes: docker run -it temm1e chat
 ENTRYPOINT ["tini", "--", "./temm1e"]
-CMD ["start"]
+# Cài đặt công cụ socat để tạo một server HTTP tạm thời
+RUN apt-get update && apt-get install -y socat && rm -rf /var/lib/apt/lists/*
+
+# Chạy bot ở chế độ nền (background) và một server HTTP nhỏ trên cổng 10000
+CMD socat TCP-LISTEN:10000,fork,reuseaddr SYSTEM:'echo "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"' & ./temm1e start
