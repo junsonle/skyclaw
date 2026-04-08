@@ -63,6 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxcb-randr0 \
         libxcb-shm0 \
         libxkbcommon0 \
+        libxdo3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Chromium path for chromiumoxide (Prowl browser engine)
