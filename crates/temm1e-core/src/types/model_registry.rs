@@ -136,6 +136,10 @@ fn lookup(model: &str) -> Option<ModelLimits> {
             context_window: 1_048_576,
             max_output_tokens: 65_536,
         },
+        "gemma-4-31b-it" | "gemma-4-31b" => ModelLimits {
+            context_window: 131_072,
+            max_output_tokens: 8_192,
+        },
 
         // ── xAI Grok ──────────────────────────────────────────────────
         "grok-4-1-fast-non-reasoning" | "grok-4-1-fast" | "grok-4.1-fast" => ModelLimits {
@@ -293,6 +297,7 @@ pub fn default_model(provider_name: &str) -> &'static str {
         "minimax" => "MiniMax-M2.5",
         "stepfun" => "step-3.5-flash",
         "zai" => "glm-4.7-flash",
+        "nvidia" => "nvidia/llama-3.1-405b-instruct",
         "ollama" => "llama3.3",
         _ => "claude-sonnet-4-6",
     }
@@ -317,6 +322,7 @@ pub fn available_models_for_provider(provider: &str) -> Vec<&'static str> {
             "gemini-3.1-flash-lite-preview",
             "gemini-2.5-flash",
             "gemini-2.5-pro",
+            "gemma-4-31b-it",
         ],
         "grok" | "xai" => vec!["grok-4-1-fast-non-reasoning", "grok-3"],
         "openrouter" => vec![
@@ -335,6 +341,11 @@ pub fn available_models_for_provider(provider: &str) -> Vec<&'static str> {
         ],
         "minimax" => vec!["MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
         "stepfun" => vec!["step-3.5-flash", "step-3", "step-2-16k"],
+        "nvidia" => vec![
+            "nvidia/llama-3.1-405b-instruct",
+            "nvidia/llama-3.1-70b-instruct",
+            "nvidia/nemotron-4-340b-instruct",
+        ],
         _ => vec![],
     }
 }

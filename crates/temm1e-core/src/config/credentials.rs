@@ -113,6 +113,7 @@ pub fn normalize_provider_name(name: &str) -> Option<&'static str> {
         "minimax" => Some("minimax"),
         "stepfun" | "step" => Some("stepfun"),
         "zai" | "zhipu" | "glm" => Some("zai"),
+        "nvidia" | "nim" => Some("nvidia"),
         "ollama" => Some("ollama"),
         _ => None,
     }
@@ -146,7 +147,7 @@ pub fn detect_api_key(text: &str) -> Option<DetectedCredential> {
         if p != "http" && p != "https" {
             match p.as_str() {
                 "anthropic" | "openai" | "gemini" | "grok" | "xai" | "openrouter" | "minimax"
-                | "stepfun" | "step" | "zai" | "zhipu" | "ollama" | "github" | "gh" => {
+                | "stepfun" | "step" | "zai" | "zhipu" | "nvidia" | "nim" | "ollama" | "github" | "gh" => {
                     if key.len() >= 8 && !is_placeholder_key(key) {
                         return Some(DetectedCredential {
                             provider: match p.as_str() {
@@ -158,6 +159,7 @@ pub fn detect_api_key(text: &str) -> Option<DetectedCredential> {
                                 "minimax" => "minimax",
                                 "stepfun" | "step" => "stepfun",
                                 "zai" | "zhipu" => "zai",
+                                "nvidia" | "nim" => "nvidia",
                                 "ollama" => "ollama",
                                 "github" | "gh" => "github",
                                 _ => unreachable!(),
@@ -210,6 +212,12 @@ pub fn detect_api_key(text: &str) -> Option<DetectedCredential> {
     } else if trimmed.starts_with("AIzaSy") {
         Some(DetectedCredential {
             provider: "gemini",
+            api_key: trimmed.to_string(),
+            base_url: None,
+        })
+    } else if trimmed.starts_with("nvapi-") {
+        Some(DetectedCredential {
+            provider: "nvidia",
             api_key: trimmed.to_string(),
             base_url: None,
         })
@@ -462,6 +470,13 @@ mod tests {
     }
 
     #[test]
+    fn detect_nvidia_key() {
+        let cred = detect_api_key("nvapi-abc123def456").unwrap();
+        assert_eq!(cred.provider, "nvidia");
+        assert_eq!(cred.api_key, "nvapi-abc123def456");
+    }
+
+    #[test]
     fn detect_explicit_provider_key() {
         let cred = detect_api_key("minimax:eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9").unwrap();
         assert_eq!(cred.provider, "minimax");
@@ -505,6 +520,8 @@ mod tests {
         assert_eq!(normalize_provider_name("grok"), Some("grok"));
         assert_eq!(normalize_provider_name("xai"), Some("grok"));
         assert_eq!(normalize_provider_name("openrouter"), Some("openrouter"));
+        assert_eq!(normalize_provider_name("nvidia"), Some("nvidia"));
+        assert_eq!(normalize_provider_name("nim"), Some("nvidia"));
         assert_eq!(normalize_provider_name("minimax"), Some("minimax"));
         assert_eq!(normalize_provider_name("zai"), Some("zai"));
         assert_eq!(normalize_provider_name("zhipu"), Some("zai"));

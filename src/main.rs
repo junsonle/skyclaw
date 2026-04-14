@@ -2961,6 +2961,23 @@ async fn main() -> Result<()> {
                                         return;
                                     }
 
+                                    // /addkey nvidia — NVIDIA NIM key
+                                    if cmd_lower == "/addkey nvidia" || cmd_lower == "/addkey nim" {
+                                        pending_raw_keys_worker.lock().await.insert(msg.chat_id.clone());
+                                        let reply = temm1e_core::types::message::OutboundMessage {
+                                            chat_id: msg.chat_id.clone(),
+                                            text: "Paste your NVIDIA API key (nvapi-xxx).\n\n\
+                                                   Get one at: build.nvidia.com\n\n\
+                                                   This lets me use NVIDIA NIM models like Llama 3.1 or Nemotron."
+                                                .to_string(),
+                                            reply_to: Some(msg.id.clone()),
+                                            parse_mode: None,
+                                        };
+                                        send_with_retry(&*sender, reply).await;
+                                        is_heartbeat_clone.store(false, Ordering::Relaxed);
+                                        return;
+                                    }
+
                                     // /addkey github — GitHub PAT for vigil
                                     if cmd_lower == "/addkey github" {
                                         pending_raw_keys_worker.lock().await.insert(msg.chat_id.clone());
