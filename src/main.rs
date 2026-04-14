@@ -3088,6 +3088,83 @@ async fn main() -> Result<()> {
                                         return;
                                     }
 
+                                    // /use <provider> — switch active provider
+                                    if cmd_lower.starts_with("/use ") {
+                                        let target_provider = msg_text_cmd.trim()["/use".len()..].trim().to_lowercase();
+                                        let reply_text = if target_provider.is_empty() {
+                                            "Usage: /use <provider>\nExample: /use nvidia\n\nUse /keys to see configured providers.".to_string()
+                                        } else if let Some(mut creds) = load_credentials_file() {
+                                            if !creds.providers.iter().any(|p| p.name == target_provider) {
+                                                format!("Provider '{}' not configured. Use /addkey to add it first.\n\nConfigured providers: {}",
+                                                    target_provider,
+                                                    creds.providers.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
+                                            } else if creds.active == target_provider {
+                                                format!("Already using {} provider.", target_provider)
+                                            } else {
+                                                creds.active = target_provider.clone();
+                                                let path = credentials_path();
+                                                match toml::to_string_pretty(&creds) {
+                                                    Ok(content) => {
+                                                        if let Err(e) = std::fs::write(&path, &content) {
+                                                            format!("Failed to save: {}", e)
+                                                        } else if let Some(prov) = creds.providers.iter().find(|p| p.name == target_provider) {
+                                                            let valid_keys: Vec<String> = prov.keys.iter()
+                                                                .filter(|k| !is_placeholder_key(k))
+                                                                .cloned()
+                                                                .collect();
+                                                            let effective_base_url = prov.base_url.clone().or_else(|| base_url.clone());
+                                                            let reload_config = temm1e_core::types::config::ProviderConfig {
+                                                                name: Some(target_provider.clone()),
+                                                                api_key: valid_keys.first().cloned(),
+                                                                keys: valid_keys,
+                                                                model: Some(prov.model.clone()),
+                                                                base_url: effective_base_url,
+                                                                extra_headers: std::collections::HashMap::new(),
+                                                            };
+                                                            match validate_provider_key(&reload_config).await {
+                                                                Ok(validated_provider) => {
+                                                                    let new_agent = Arc::new(temm1e_agent::AgentRuntime::with_limits(
+                                                                        validated_provider,
+                                                                        memory.clone(),
+                                                                        tools_template.clone(),
+                                                                        prov.model.clone(),
+                                                                        Some(build_system_prompt(&personality)),
+                                                                        max_turns,
+                                                                        max_ctx,
+                                                                        max_rounds,
+                                                                        max_task_duration,
+                                                                        max_spend,
+                                                                    ).with_v2_optimizations(v2_opt).with_parallel_phases(pp_opt).with_hive_enabled(hive_on).with_shared_mode(shared_mode.clone()).with_shared_memory_strategy(shared_memory_strategy.clone()).with_personality(personality.clone()).with_social(social_storage.clone(), Some(social_config_captured.clone())));
+                                                                    *agent_state.write().await = Some(new_agent);
+                                                                    tracing::info!(provider = %target_provider, model = %prov.model, "Agent reloaded via /use command");
+                                                                    format!("Switched to {} provider (model: {}).\nActive now.", target_provider, prov.model)
+                                                                }
+                                                                Err(err) => {
+                                                                    // Revert active
+                                                                    format!("Provider switch failed: {}", err)
+                                                                }
+                                                            }
+                                                        } else {
+                                                            "Provider not found after save.".to_string()
+                                                        }
+                                                    }
+                                                    Err(e) => format!("Failed to serialize: {}", e),
+                                                }
+                                            }
+                                        } else {
+                                            "No providers configured. Use /addkey to add one.".to_string()
+                                        };
+                                        let reply = temm1e_core::types::message::OutboundMessage {
+                                            chat_id: msg.chat_id.clone(),
+                                            text: reply_text,
+                                            reply_to: Some(msg.id.clone()),
+                                            parse_mode: None,
+                                        };
+                                        send_with_retry(&*sender, reply).await;
+                                        is_heartbeat_clone.store(false, Ordering::Relaxed);
+                                        return;
+                                    }
+
                                     // /model [model-name] — list or switch models
                                     if cmd_lower == "/model" || cmd_lower.starts_with("/model ") {
                                         let args = if cmd_lower == "/model" {
@@ -3345,6 +3422,7 @@ Available commands:\n\n\
 /keys — List configured providers and active model\n\
 /model — Show current model and available models\n\
 /model <name> — Switch to a different model\n\
+/use <provider> — Switch to a different configured provider\n\
 /removekey <provider> — Remove a provider's API key\n\
 /usage — Show token usage and cost summary\n\
 /memory — Show current memory strategy\n\
@@ -5909,6 +5987,7 @@ Just type a message to chat with the AI agent.",
                          /keys — List configured providers and active model\n\
                          /model — Show current model and available models\n\
                          /model <name> — Switch to a different model\n\
+                         /use <provider> — Switch to a different configured provider\n\
                          /removekey <provider> — Remove a provider's API key\n\
                          /usage — Show token usage and cost summary\n\
                          /memory — Show current memory strategy\n\

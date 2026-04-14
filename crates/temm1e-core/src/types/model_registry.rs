@@ -297,7 +297,7 @@ pub fn default_model(provider_name: &str) -> &'static str {
         "minimax" => "MiniMax-M2.5",
         "stepfun" => "step-3.5-flash",
         "zai" => "glm-4.7-flash",
-        "nvidia" => "nvidia/llama-3.1-405b-instruct",
+        "nvidia" => "google/gemma-4-31b-it",
         "ollama" => "llama3.3",
         _ => "claude-sonnet-4-6",
     }
@@ -342,9 +342,12 @@ pub fn available_models_for_provider(provider: &str) -> Vec<&'static str> {
         "minimax" => vec!["MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
         "stepfun" => vec!["step-3.5-flash", "step-3", "step-2-16k"],
         "nvidia" => vec![
-            "nvidia/llama-3.1-405b-instruct",
-            "nvidia/llama-3.1-70b-instruct",
-            "nvidia/nemotron-4-340b-instruct",
+            "google/gemma-4-31b-it",
+            "meta/llama-3.1-405b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "nvidia/nemotron-mini-4b-instruct",
         ],
         _ => vec![],
     }

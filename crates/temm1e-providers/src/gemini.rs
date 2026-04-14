@@ -59,6 +59,10 @@ struct GeminiPart {
     /// Gemini 3 thought signature — sibling of functionCall, must be echoed back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thought_signature: Option<String>,
+    /// Gemini thinking models mark internal reasoning parts with `thought: true`.
+    /// These should be hidden from the final response shown to users.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thought: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -373,6 +377,10 @@ impl GeminiProvider {
                 stop_reason = candidate.finish_reason.clone();
                 if let Some(ref content) = candidate.content {
                     for part in &content.parts {
+                        // Skip internal reasoning parts (thought: true) — hide thinking from users
+                        if part.thought == Some(true) {
+                            continue;
+                        }
                         if let Some(ref text) = part.text {
                             content_parts.push(ContentPart::Text { text: text.clone() });
                         }
