@@ -1125,25 +1125,30 @@ async fn run_setup_wizard() -> Result<()> {
             // User pasted API key directly at the choice prompt
             let key = key_at_choice.unwrap();
             if !key.is_empty() {
-                // Auto-detect provider
-                let provider = if key.starts_with("sk-ant-") {
-                    "anthropic"
-                } else if key.starts_with("AIzaSy") {
-                    "gemini"
-                } else if key.starts_with("xai-") {
-                    "grok"
-                } else if key.starts_with("sk-or-") {
-                    "openrouter"
-                } else {
-                    // Default: OpenAI-compatible (sk- prefix or unknown)
-                    "openai"
-                };
-                println!("  Detected provider: {provider}");
+                    // Auto-detect provider
+                    let (provider, final_key) = if key.contains(':') {
+                        let parts: Vec<&str> = key.splitn(2, ':').collect();
+                        (parts[0].to_string(), parts[1].to_string())
+                    } else if key.starts_with("sk-ant-") {
+                        ("anthropic".to_string(), key.clone())
+                    } else if key.starts_with("AIzaSy") {
+                        ("gemini".to_string(), key.clone())
+                    } else if key.starts_with("xai-") {
+                        ("grok".to_string(), key.clone())
+                    } else if key.starts_with("sk-or-") {
+                        ("openrouter".to_string(), key.clone())
+                    } else if key.starts_with("nvapi-") {
+                        ("nvidia".to_string(), key.clone())
+                    } else {
+                        // Default: OpenAI-compatible (sk- prefix or unknown)
+                        ("openai".to_string(), key.clone())
+                    };
+                    println!("  Detected provider: {provider}");
 
-                // Save to credentials file (encrypted later by the agent)
-                let creds_path = temm1e_dir.join("credentials.toml");
-                let creds_content = format!("[providers.{}]\napi_key = \"{}\"\n", provider, key);
-                std::fs::write(&creds_path, creds_content)?;
+                    // Save to credentials file (encrypted later by the agent)
+                    let creds_path = temm1e_dir.join("credentials.toml");
+                    let creds_content = format!("[providers.{}]\napi_key = \"{}\"\n", provider, final_key);
+                    std::fs::write(&creds_path, creds_content)?;
                 println!("  Saved to ~/.temm1e/credentials.toml");
             } else {
                 println!("  Skipped — you can paste your API key in chat later.");

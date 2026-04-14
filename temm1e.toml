@@ -7,9 +7,20 @@ port = 8080
 tls = false
 
 [provider]
-name = "anthropic"
-api_key = "${ANTHROPIC_API_KEY}"
-model = "claude-sonnet-4-6"
+# Sử dụng openai-compatible cho Gemma để tránh lỗi Unknown Model của Gemini Native
+name = "openai-compatible"
+api_key = "${GEMINI_API_KEY}"
+keys = ["${GEMINI_KEY_2}", "${GEMINI_KEY_3}"] # Thêm các key dự phòng ở đây
+model = "gemma-4-31b-it"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+# Nếu bạn muốn dùng NVIDIA, hãy comment phần trên và uncomment phần dưới
+# [provider.nvidia]
+# name = "nvidia"
+# api_key = "${NVIDIA_API_KEY}"
+# keys = ["${NVIDIA_KEY_2}", "${NVIDIA_KEY_3}"]
+# model = "meta/llama-3.1-405b-instruct"
+# base_url = "https://integrate.api.nvidia.com/v1"
 
 [agent]
 # max_spend_usd = 0.0  # 0.0 = unlimited (default). Set a value to cap per-process spend.
