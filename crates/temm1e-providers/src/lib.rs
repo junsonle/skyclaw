@@ -6,6 +6,7 @@
 //! - **xAI Grok** (via OpenAI-compatible endpoint)
 //! - **OpenRouter** (290+ models via OpenAI-compatible endpoint)
 //! - **MiniMax** (via OpenAI-compatible endpoint)
+//! - **NVIDIA NIM** (via OpenAI-compatible endpoint)
 //! - **Google Gemini** (via OpenAI-compatible endpoint)
 //! - **Z.ai / Zhipu AI** (GLM models via OpenAI-compatible endpoint)
 
@@ -112,6 +113,17 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn Provider>, Tem
                 .with_extra_headers(config.extra_headers.clone());
             Ok(Box::new(provider))
         }
+        "nvidia" => {
+            let base_url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "https://integrate.api.nvidia.com/v1".to_string());
+            let provider = OpenAICompatProvider::new(api_key)
+                .with_keys(all_keys)
+                .with_base_url(base_url)
+                .with_extra_headers(config.extra_headers.clone());
+            Ok(Box::new(provider))
+        }
         "ollama" => {
             let base_url = config
                 .base_url
@@ -202,6 +214,12 @@ mod tests {
     #[test]
     fn create_stepfun_provider() {
         let provider = create_provider(&config_with_name("stepfun")).unwrap();
+        assert_eq!(provider.name(), "openai-compatible");
+    }
+
+    #[test]
+    fn create_nvidia_provider() {
+        let provider = create_provider(&config_with_name("nvidia")).unwrap();
         assert_eq!(provider.name(), "openai-compatible");
     }
 

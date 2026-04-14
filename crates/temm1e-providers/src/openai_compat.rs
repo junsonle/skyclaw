@@ -655,24 +655,31 @@ impl Provider for OpenAICompatProvider {
 
                 let status = response.status();
                 // Non-success errors are NOT retryable — return immediately.
-                if !status.is_success() {
-                    let error_body = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "unknown error".into());
-                    error!(provider = "openai-compat", %status, "API error: {}", error_body);
-                    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        self.rotate_key();
-                        return Err(Temm1eError::RateLimited(error_body));
-                    }
-                    if status == reqwest::StatusCode::UNAUTHORIZED {
-                        self.rotate_key();
-                        return Err(Temm1eError::Auth(error_body));
-                    }
-                    return Err(Temm1eError::Provider(format!(
-                        "OpenAI-compat API error ({status}): {error_body}"
-                    )));
-                }
+    if !status.is_success() {
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".into());
+        error!(provider = "openai-compat", %status, "API error: {}", error_body);
+        
+        // Rotate key on Rate Limit (429), Unauthorized (401), or Internal Server Error (500)
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS 
+            || status == reqwest::StatusCode::UNAUTHORIZED 
+            || status == reqwest::StatusCode::INTERNAL_SERVER_ERROR 
+        {
+            self.rotate_key();
+        }
+
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(Temm1eError::RateLimited(error_body));
+        }
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(Temm1eError::Auth(error_body));
+        }
+        return Err(Temm1eError::Provider(format!(
+            "OpenAI-compat API error ({status}): {error_body}"
+        )));
+    }
 
                 // Capture headers before .text() consumes the response.
                 let content_len = response.content_length();
@@ -790,23 +797,29 @@ impl Provider for OpenAICompatProvider {
         })?;
 
         let status = response.status();
-        if !status.is_success() {
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "unknown error".into());
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                self.rotate_key();
-                return Err(Temm1eError::RateLimited(error_body));
-            }
-            if status == reqwest::StatusCode::UNAUTHORIZED {
-                self.rotate_key();
-                return Err(Temm1eError::Auth(error_body));
-            }
-            return Err(Temm1eError::Provider(format!(
-                "OpenAI-compat API error ({status}): {error_body}"
-            )));
+    if !status.is_success() {
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "unknown error".into());
+        
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS 
+            || status == reqwest::StatusCode::UNAUTHORIZED 
+            || status == reqwest::StatusCode::INTERNAL_SERVER_ERROR 
+        {
+            self.rotate_key();
         }
+
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(Temm1eError::RateLimited(error_body));
+        }
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(Temm1eError::Auth(error_body));
+        }
+        return Err(Temm1eError::Provider(format!(
+            "OpenAI-compat API error ({status}): {error_body}"
+        )));
+    }
 
         let byte_stream = response.bytes_stream();
 

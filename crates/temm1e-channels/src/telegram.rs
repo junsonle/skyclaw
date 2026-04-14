@@ -263,10 +263,11 @@ impl Channel for TelegramChannel {
             .map(ChatId)
             .map_err(|_| Temm1eError::Channel(format!("Invalid chat_id: {}", msg.chat_id)))?;
 
-        // Split messages that exceed Telegram's 4096 character limit.
-        let chunks = split_message(&msg.text, TELEGRAM_MESSAGE_LIMIT);
+    // Split messages that exceed Telegram's 4096 character limit.
+    let text_to_send = strip_thought_process(&msg.text);
+    let chunks = split_message(&text_to_send, TELEGRAM_MESSAGE_LIMIT);
 
-        for chunk in &chunks {
+    for chunk in &chunks {
             let mut request = bot.send_message(chat_id, chunk);
 
             if let Some(ref mode) = msg.parse_mode {
@@ -784,6 +785,20 @@ fn extract_attachments(msg: &teloxide::types::Message) -> Vec<AttachmentRef> {
     }
 
     attachments
+}
+
+/// Removes thought process blocks (e.g., <<thoughtthought>...</thought>) from the text.
+fn strip_thought_process(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("<<thoughtthought>") {
+        if let Some(end) = result[start..].find("</thought>") {
+            let end_pos = start + end + "</thought>".len();
+            result.replace_range(start..end_pos, "");
+        } else {
+            break;
+        }
+    }
+    result.trim().to_string()
 }
 
 /// Split a message into chunks that fit within a character limit.
