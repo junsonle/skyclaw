@@ -65,6 +65,12 @@ struct GeminiPart {
     thought: Option<bool>,
 }
 
+impl GeminiPart {
+    fn text(text: String) -> Self {
+        Self { text: Some(text), inline_data: None, function_call: None, function_response: None, thought_signature: None, thought: None }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct GeminiFunctionCall {
     name: String,
@@ -228,6 +234,7 @@ impl GeminiProvider {
                                     }),
                                     inline_data: None,
                                     thought_signature: None,
+                                    thought: None,
                                 }),
                                 _ => None,
                             })
@@ -260,6 +267,7 @@ impl GeminiProvider {
                         function_response: None,
                         inline_data: None,
                         thought_signature: None,
+                        thought: None,
                     }],
                 },
             );
@@ -276,6 +284,7 @@ impl GeminiProvider {
                     function_response: None,
                     inline_data: None,
                     thought_signature: None,
+                    thought: None,
                 }],
             })
         };
@@ -318,6 +327,7 @@ impl GeminiProvider {
                     function_response: None,
                     inline_data: None,
                     thought_signature: None,
+                    thought: None,
                 }]
             }
             MessageContent::Parts(parts) => parts
@@ -329,6 +339,7 @@ impl GeminiProvider {
                         function_response: None,
                         inline_data: None,
                         thought_signature: None,
+                        thought: None,
                     }),
                     ContentPart::ToolUse {
                         name,
@@ -345,6 +356,7 @@ impl GeminiProvider {
                         inline_data: None,
                         // Echo thought_signature as sibling of functionCall
                         thought_signature: thought_signature.clone(),
+                        thought: None,
                     }),
                     ContentPart::Image { media_type, data } => Some(GeminiPart {
                         text: None,
@@ -355,6 +367,7 @@ impl GeminiProvider {
                             data: data.clone(),
                         }),
                         thought_signature: None,
+                        thought: None,
                     }),
                     ContentPart::ToolResult { .. } => None, // handled in Tool role
                 })
