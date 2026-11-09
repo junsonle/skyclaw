@@ -71,8 +71,9 @@ WORKDIR /app
 
 COPY --from=builder /app/target/release/temm1e ./temm1e
 
-RUN mkdir -p /root/.temm1e
-COPY config.toml /root/.temm1e/config.toml
+RUN mkdir -p /var/lib/temm1e /root/.temm1e
+COPY temm1e.toml /var/lib/temm1e/config.toml
+COPY temm1e.toml /root/.temm1e/config.toml
 
 # A successful link in the builder does not prove runtime libraries exist.
 RUN ldd ./temm1e && ./temm1e --version
