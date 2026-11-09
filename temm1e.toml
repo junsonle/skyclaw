@@ -7,8 +7,8 @@ port = 8080
 tls = false
 
 [provider]
-name = "anthropic"
-api_key = "${ANTHROPIC_API_KEY}"
+api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
+base_url = "https://ninerouter-twxs.onrender.com/v1"
 model = "claude-sonnet-4-6"
 
 [agent]
