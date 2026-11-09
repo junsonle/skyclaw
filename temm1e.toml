@@ -9,7 +9,7 @@ tls = false
 [provider]
 api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
 base_url = "https://ninerouter-twxs.onrender.com/v1"
-model = "claude-sonnet-4-6"
+model = "kc/nvidia/nemotron-3.5-super-vl:free"
 
 [agent]
 # max_spend_usd = 0.0  # 0.0 = unlimited (default). Set a value to cap per-process spend.
@@ -82,6 +82,6 @@ file_transfer = true
 
 [awareness]
 enabled = true
-confidence_threshold = 0.7
+confidence_threshold = 0
 max_interventions_per_session = 10
 observation_mode = "rules_first"
