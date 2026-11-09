@@ -1,15 +1,18 @@
 [temm1e]
-mode = "local"
+mode = "openai"
 
 [gateway]
 host = "127.0.0.1"
 port = 8080
 tls = false
 
-[provider]
+[providers.openai]
 api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
 base_url = "https://ninerouter-twxs.onrender.com/v1"
-model = "kc/nvidia/nemotron-3.5-super-vl:free"
+
+[openai]
+api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
+base_url = "https://ninerouter-twxs.onrender.com/v1"
 
 [agent]
 # max_spend_usd = 0.0  # 0.0 = unlimited (default). Set a value to cap per-process spend.
