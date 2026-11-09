@@ -9,6 +9,7 @@ tls = false
 [providers.openai]
 api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
 base_url = "https://ninerouter-twxs.onrender.com/v1"
+model = "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b"
 
 [openai]
 api_key = "sk-922f5a23a60a4756-kchvbk-b4ad3022"
